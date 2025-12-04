@@ -7,16 +7,16 @@ WORKDIR /app
 # 安装依赖阶段
 FROM base AS deps
 # 复制 package.json
-COPY package.json package-lock.json* ./
-# 安装依赖
-RUN npm ci --only=production && npm cache clean --force
+COPY package.json ./
+# 安装生产依赖（不使用 npm ci，因为没有 lock 文件）
+RUN npm install --omit=dev && npm cache clean --force
 
 # 构建阶段
 FROM base AS build
-# 复制 package.json
-COPY package.json package-lock.json* tsconfig.json ./
+# 复制 package.json 和配置文件
+COPY package.json tsconfig.json ./
 # 安装所有依赖（包括 devDependencies）
-RUN npm ci && npm cache clean --force
+RUN npm install && npm cache clean --force
 # 复制源代码
 COPY src ./src
 # 构建 TypeScript

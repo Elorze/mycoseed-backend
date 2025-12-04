@@ -14,11 +14,13 @@ RUN npm install --omit=dev && npm cache clean --force
 # 构建阶段
 FROM base AS build
 # 复制 package.json 和配置文件
-COPY package.json tsconfig.json ./
+COPY package.json package-lock.json* tsconfig.json ./
 # 安装所有依赖（包括 devDependencies）
 RUN npm install && npm cache clean --force
 # 复制源代码
 COPY src ./src
+# 验证 TypeScript 配置
+RUN npx tsc --showConfig
 # 构建 TypeScript
 RUN npm run build
 

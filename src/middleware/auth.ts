@@ -13,7 +13,7 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
     {
         const authHeader = req.headers.authorization
 
-        if(!authHeader || !authHeader.startsWith('Bearer'))
+        if(!authHeader || !authHeader.startsWith('Bearer '))
         {
             return res.status(401).json({result:'error',message:'Unauthorized'})
         }

@@ -23,18 +23,30 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
         // 查找 token
         const {data:authToken, error: tokenError} = await supabase
             .from('auth_tokens')
-            .select('*,users(*)')
+            .select('user_id')
             .eq('token',token)
             .eq('disabled',false)
             .single()
         
-        if(tokenError||!authToken)
+        if(tokenError || !authToken)
         {
             return res.status(401).json({result:'error',message:'Invalid token'})
         }
 
+        // 根据 user_id 查询用户信息
+        const {data:user, error:userError} = await supabase
+            .from('users')
+            .select('*')
+            .eq('id',authToken.user_id)
+            .single()
+        
+        if(userError || !user)
+        {
+            return res.status(401).json({result:'error',message:'User not found'})
+        }
+
         // 将用户信息附加到请求对象
-        req.user = authToken.users as User
+        req.user = user as User
         next()
     } catch (error:any)
     {
@@ -42,4 +54,5 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
         res.status(401).json({result:'error',message:'Unauthorized'})
     }
 }
+
 

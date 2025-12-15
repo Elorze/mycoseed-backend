@@ -131,12 +131,18 @@ export const claimTask = async (req:Request,res:Response)=>
         if (!task.allow_repeat_claim) {
             if (userIdentifier) {
                 // 检查 task_claims 表中是否已有该用户的领取记录
-                const { data: existingClaim } = await supabase
+                const { data: existingClaim,error: claimCheckError } = await supabase
                     .from('task_claims')
                     .select('id')
                     .eq('task_id', id)
                     .eq('user_id', userIdentifier)
                     .single()
+
+                // 如果查询出错且不是“未找到记录”的错误，抛出异常
+                if(claimCheckError && claimCheckError.code !== 'PGRST116')
+                {
+                    throw claimCheckError
+                }
 
                 if (existingClaim) {
                     return res.status(400).json({success: false, message: '您已经领取过这个任务'})
@@ -151,11 +157,15 @@ export const claimTask = async (req:Request,res:Response)=>
         } else {
             // 如果允许重复领取，删除该用户之前的领取记录（如果有）
             if (userIdentifier) {
-                await supabase
+                const { error: deleteError } = await supabase
                     .from('task_claims')
                     .delete()
                     .eq('task_id', id)
                     .eq('user_id', userIdentifier)
+
+                if (deleteError) {
+                    throw deleteError
+                }
             }
         }
 
@@ -186,17 +196,22 @@ export const claimTask = async (req:Request,res:Response)=>
 
         // 记录领取关系（如果有用户标识）
         if (userIdentifier) {
-            await supabase
+            const { error: insertError } = await supabase
                 .from('task_claims')
                 .insert({
                     task_id: id,
                     user_id: userIdentifier
                 })
+
+            if (insertError) {
+                throw insertError
+            }
         }
 
         res.json({success: true, message: '任务领取成功！'})
     } catch (error:any)
     {
+        console.error('Claim task error:',error)
         res.status(500).json({success: false, message: error.message || '领取任务失败'})
     }
 }

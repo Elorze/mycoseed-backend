@@ -1,16 +1,14 @@
-import {supabase} from './supabase'
-import {createHash} from 'crypto'
-import {Readable} from 'stream'
+import { supabase } from './supabase'
+import { createHash } from 'crypto'
+import { Readable } from 'stream'
 
 // 计算文件的 SHA-256 哈希值
-export const calculateFileHash = async (buffer: Buffer): Promise<string> =>
-{
+export const calculateFileHash = async (buffer: Buffer): Promise<string> => {
     return createHash('sha256').update(buffer).digest('hex')
 }
 
 // 将 buffer 转换为 readable stream
-const bufferToStream = (buffer:Buffer):Readable =>
-{
+const bufferToStream = (buffer: Buffer): Readable => {
     const stream = new Readable()
     stream.push(buffer)
     stream.push(null)
@@ -24,40 +22,34 @@ const bufferToStream = (buffer:Buffer):Readable =>
  * @param path 文件路径
  * @returns 文件的公共 URL 和哈希值
  */
-export const uploadFileToStorage = async
-(
-    file:Buffer,
-    bucket:string,
+export const uploadFileToStorage = async (
+    file: Buffer,
+    bucket: string,
     path: string
-): Promise<{url:string;hash:string}>=>
-{
+): Promise<{ url: string; hash: string }> => {
     // 计算文件哈希
     const hash = await calculateFileHash(file)
 
     // 上传文件到 Supabase storage
-    const {data, error} = await supabase.storage
-    .from(bucket)
-    .upload(path,file,
-        {
-            cacheControl:'3600',
-            upsert:false,
-            contentType:'application/octet-stream'
-        }
-    )
+    const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'application/octet-stream'
+        })
 
-    if(error)
-    {
+    if (error) {
         throw new Error(`文件上传失败：${error.message}`)
     }
 
     // 获取文件的公共 URL 
-    const {data:{publicUrl}} = supabase.storage
-    .from(bucket)
-    .getPublicUrl(data.path)
+    const { data: { publicUrl } } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(data.path)
 
-    return
-    {
-        url:publicUrl,
+    return {
+        url: publicUrl,
         hash
     }
 }
@@ -68,17 +60,15 @@ export const uploadFileToStorage = async
  * @param userId 用户 ID
  * @returns 头像的公共 URL 和哈希值
  */
-export const uploadAvatar = async 
-(
-    file:Buffer,
-    userId:string
-):Promise<{url:string;hash:string}>=>
-{
+export const uploadAvatar = async (
+    file: Buffer,
+    userId: string
+): Promise<{ url: string; hash: string }> => {
     // 生成唯一文件名
     const timestamp = Date.now()
     const fileName = `${userId}/${timestamp}.jpg`
 
-    return await uploadFileToStorage(file,'avatars',fileName)
+    return await uploadFileToStorage(file, 'avatars', fileName)
 }
 
 /**
@@ -89,17 +79,15 @@ export const uploadAvatar = async
  * @param index 文件索引（用于多文件上传）
  * @returns 文件的公共 URL 和哈希值
  */
-export const uploadTaskProof = async
-(
-    file:Buffer,
-    taskId:string,
-    userId:string,
+export const uploadTaskProof = async (
+    file: Buffer,
+    taskId: string,
+    userId: string,
     index: number = 0
-): Promise<{url:string;hash:string}>=>
-{
+): Promise<{ url: string; hash: string }> => {
     // 生成唯一文件名
     const timestamp = Date.now()
     const fileName = `${taskId}/${userId}/${timestamp}_${index}.bin`
 
-    return await uploadFileToStorage(file,'task-proofs',fileName)
+    return await uploadFileToStorage(file, 'task-proofs', fileName)
 }

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { uploadAvatar, uploadTaskProof } from '../services/storage'
-import { AuthRequest } from '../middleware/auth'
+import { AuthRequest, MulterFile } from '../middleware/auth'
 
 /**
  * 上传用户头像
@@ -51,7 +51,7 @@ export const uploadProofController = async (req: AuthRequest, res: Response) => 
       return res.status(401).json({ success: false, message: '未授权' })
     }
 
-    const files = req.files as Express.Multer.File[]
+    const files = req.files as MulterFile[]
     if (!files || files.length === 0) {
       return res.status(400).json({ success: false, message: '请选择文件' })
     }

@@ -1,10 +1,23 @@
-import {Request,Response,NextFunction} from 'express'
-import {supabase} from '../services/supabase'  
-import {User} from '../types/auth'
+import { Request, Response, NextFunction } from 'express'
+import { supabase } from '../services/supabase'  
+import { User } from '../types/auth'
 
-export interface AuthRequest extends Request
-{
+export interface MulterFile {
+    fieldname: string
+    originalname: string
+    encoding: string
+    mimetype: string
+    size: number
+    buffer: Buffer
+    destination?: string
+    filename?: string
+    path?: string
+}
+
+export interface AuthRequest extends Request {
     user?: User
+    file?: MulterFile
+    files?: MulterFile[] | { [fieldname: string]: MulterFile[] }
 }
 
 export const authenticate = async (req:AuthRequest,res:Response,next:NextFunction)=>

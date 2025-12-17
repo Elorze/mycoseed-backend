@@ -236,31 +236,129 @@ export const submitProof = async (req: Request,res:Response) =>
             .eq('id',id)
             .single()
         
-            if(fetchError || !task)
-            {
-                return res.status(404).json({success:false,message:'任务不存在'})
-            }
+        if(fetchError || !task)
+        {
+            return res.status(404).json({success:false,message:'任务不存在'})
+        }
 
-            if(!task.is_claimed)
-            {
-                return res.status(400).json({success:false,message:'您还没有领取这个任务'})
-            }
+        if(!task.is_claimed)
+        {
+            return res.status(400).json({success:false,message:'您还没有领取这个任务'})
+        }
 
-            // 更新任务
-            const {error:updateError}=await supabase
-                .from('tasks')
-                .update
+        // 解析 proof 数据（可能是字符串或者对象）
+        let proofData: any
+        if(typeof proof === 'string')
+        {
+            try
+            {
+                proofData = JSON.parse(proof)
+            } catch(e)
+            {
+                return res.status(400).json({success:false, message:'凭证数据格式错误'})
+            }
+        } else
+        {
+            proofData = proof
+        }
+        
+        // 验证 GPS 数据
+        const proofConfig = task.proof_config as any
+        if(proofConfig?.gps?.enabled)
+        {
+            if(!proofData.gps)
+            {
+                return res.status(400).json
                 ({
-                    proof:proof,
-                    status:'under_review'
+                    success:false,
+                    message:'此任务要求提供GPS定位信息'
                 })
-                .eq('id',id)
-            
-            if(updateError) throw updateError
+            }
 
-            res.json({success:true,message:'凭证提交成功！'})
+            // 验证GPS数据格式
+            const { latitude,longitude,accuracy}= proofData.gps
+            if(typeof latitude !=='number'||typeof longitude !=='number'||typeof accuracy !=='number')
+            {
+                return res.status(400).json
+                ({
+                    success:false,
+                    message:'GPS数据格式错误'
+                })
+            }
+
+            // 验证GPS精度
+            const requiredAccuracy = proofConfig.gps.accuracy || 'medium'
+            const accuracyThresholds: Record<string, number> = {
+              high: 10,    // 10米
+              medium: 100, // 100米
+              low: 1000    // 1000米
+            }
+            const threshold = accuracyThresholds[requiredAccuracy] || 100
+            if (accuracy > threshold) {
+                return res.status(400).json({ 
+                  success: false, 
+                  message: `GPS精度不足，要求精度: ${requiredAccuracy} (${threshold}米以内)，当前精度: ${accuracy.toFixed(2)}米` 
+                })
+            }
+        }
+
+        // 验证文件
+        if(proofConfig?.photo?.enabled)
+        {
+            if(!proofData.files || proofData.files.length ===0)
+            {
+                return res.status(400).json
+                ({
+                    success:false,
+                    message:'此任务要求提供照片证明'
+                })
+            }
+        }
+
+        // 验证文字描述
+        if (proofConfig?.description?.enabled)
+        {
+            if(!proofData.description || proofData.description.trim().length ===0)
+            {
+                return res.status(400).json
+                ({
+                    success:false,
+                    message:'此任务要求提供文字描述'
+                })
+            }
+
+            // 验证最少字数
+            const minWords = parseInt(proofConfig.description.minWords||'20')
+            const wordCount = proofData.description.trim().split(/\s+/).length
+            if(wordCount<minWords)
+            {
+                return res.status(400).json
+                ({
+                    success:false,
+                    message:`文字描述至少需要${minWords}字，当前${wordCount}字`
+                })
+            }
+        }
+
+        // 将 proof 数据序列化为 JSON 字符串存储
+        const proofString = JSON.stringify(proofData)
+
+        // 更新任务
+        const {error:updateError}=await supabase
+        .from('tasks')
+        .update({
+            proof:proofString,
+            status:'under_review'
+        })
+        .eq('id',id)
+
+        if (updateError) throw updateError
+
+        res.json({success:true,message:'凭证提交成功！'})
+        
     } catch (error:any)
     {
+        console.error('Submit proof error:',error)
         res.status(500).json({success:false,message:error.message || '提交凭证失败'})
     }
 }

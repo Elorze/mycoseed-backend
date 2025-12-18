@@ -3,6 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import tasksRouter from './routes/tasks'
 import authRouter from './routes/auth'
+import uploadRouter from './routes/upload'
 
 dotenv.config()
 
@@ -33,15 +34,22 @@ const corsOptions = {
 // 中间件
 app.use(cors(corsOptions))
 app.use(express.json())
+app.use(express.urlencoded({extended:true}))
 
 // 健康检查
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'MycoSeed Backend API is running' })
 })
 
+// 测试上传路由是否可用
+app.get('/api/upload/test', (req, res) => {
+  res.json({ status: 'ok', message: 'Upload routes are available' })
+})
+
 // 路由
 app.use('/api/tasks', tasksRouter)
 app.use('/api/auth',authRouter)
+app.use('/api/upload',uploadRouter)
 
 // 启动服务器
 app.listen(PORT, () => {

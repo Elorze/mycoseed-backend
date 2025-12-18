@@ -14,7 +14,7 @@ export interface MulterFile {
     path?: string
 }
 
-export interface AuthRequest extends Request {
+export interface AuthRequest extends Omit<Request, 'file' | 'files'> {
     user?: User
     file?: MulterFile
     files?: MulterFile[] | { [fieldname: string]: MulterFile[] }

@@ -36,6 +36,7 @@ export interface Task{
     deadline?: string
     proofConfig?: ProofConfig
     allowRepeatClaim?: boolean  // 是否允许重复领取
+    creatorId?: string          // 创建者ID (UUID)
     createdAt?: string
     updatedAt?: string
 }
@@ -48,6 +49,9 @@ export interface CreateTaskParams{
     deadline: string
     proofConfig?: ProofConfig
     allowRepeatClaim?: boolean  // 是否允许重复领取
+    creatorId?: string
+    createdAt?: string
+    updatedAt?: string
 }
 
 export interface TaskResponse

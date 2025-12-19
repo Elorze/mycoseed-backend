@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { supabase } from '../services/supabase'
 import { Task, CreateTaskParams, TaskStatus } from '../types/task'
+import { AuthRequest } from '../middleware/auth'
 
 // ==================== 辅助函数 ====================
 
@@ -24,7 +25,8 @@ const mapDbTaskToTask = (dbTask: any): Task => ({
   proofConfig: dbTask.proof_config,
   allowRepeatClaim: dbTask.allow_repeat_claim || false,  // 新增
   createdAt: dbTask.created_at,
-  updatedAt: dbTask.updated_at
+  updatedAt: dbTask.updated_at,
+  creatorId: dbTask.creator_id
 })
 
 /**
@@ -83,7 +85,7 @@ export const getTaskById = async (req: Request, res: Response) => {
 }
 
 // 创建新任务
-export const createTask = async (req: Request, res: Response) => {
+export const createTask = async (req: AuthRequest, res: Response) => {
     try {
       const params: CreateTaskParams = req.body
   
@@ -104,7 +106,8 @@ export const createTask = async (req: Request, res: Response) => {
           proof_config: params.proofConfig || null,
           activity_id: 0,
           is_claimed: false,
-          allow_repeat_claim: params.allowRepeatClaim || false  // 新增
+          allow_repeat_claim: params.allowRepeatClaim || false,  // 新增
+          creator_id: req.user?.id || null
         })
         .select()
         .single()
@@ -360,5 +363,159 @@ export const submitProof = async (req: Request,res:Response) =>
     {
         console.error('Submit proof error:',error)
         res.status(500).json({success:false,message:error.message || '提交凭证失败'})
+    }
+}
+
+// 审核通过任务
+export const approveTask = async (req: AuthRequest, res: Response) =>
+{
+    try
+    {
+        const { id } = req.params
+        const { comments } = req.body // 可选的评语
+        const user = req.user 
+        if (!user)
+        {
+            return res.status(401).json({ success: false, message: '未授权' })
+        }
+
+        // 获取任务
+        const task = await getTaskFromDb(id)
+
+        // 验证任务状态
+        if (task.status !== 'under_review')
+        {
+            return res.status(400).json
+            ({
+                success: false,
+                message: '任务状态不正确，只能审核待审核状态的任务'
+            })
+        }
+
+        // 验证权限：只有创建者可以审核
+        if (!task.creator_id)
+        {
+            return res.status(403).json
+            ({
+                success: false,
+                message: '该任务没有创建者，无法审核'
+            })
+        }
+        if (task.creator_id !== user.id)
+        {
+            return res.status(403).json
+            ({
+                success: false,
+                message: '您不是任务创建者，无权审核此任务'
+            })
+        }
+
+        // 更新任务状态
+        const { error } = await supabase
+            .from('tasks')
+            .update
+            ({
+                status: 'completed',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id',id)
+
+        if (error) throw error
+
+        res.json
+        ({
+            success: true,
+            message: '任务审核通过！'
+        })
+    } catch (error: any)
+    {
+        console.error('Approve task error:', error)
+        res.status(500).json
+        ({
+            success: false,
+            message: error.message || '审核失败'
+        })
+    }
+}
+
+// 审核驳回任务
+export const rejectTask = async (req: AuthRequest, res: Response) =>
+{
+    try
+    {
+        const { id } = req.params
+        const { reason } = req.body
+        const user = req.user
+        if (!user) 
+        {
+            return res.status(401).json({ success: false, message:'未授权' })
+        }
+
+        if (!reason || reason.trim().length === 0)
+        {
+            return res.status(400).json
+            ({
+                success: false,
+                message: '请提供驳回理由'
+            })
+        }
+
+        // 获取任务
+        const task = await getTaskFromDb(id)
+
+        // 验证任务状态
+        if (task.status !== 'under_review')
+        {
+            return res.status(400).json
+            ({
+                success: false,
+                message: '任务状态不正确，只能审核待审核状态的任务'
+            })
+        }
+
+        // 验证权限：只有创建者可以审核
+        if (!task.creator_id)
+        {
+            return res.status(403).json
+            ({
+                success: false,
+                message: '该任务没有创建者，无法审核'
+            })
+        }
+        if (task.creator_id !== user.id)
+        {
+            return res.status(403).json
+            ({
+                success: false,
+                message: '您不是任务创建者，无权审核此任务'
+            })
+        }
+
+        // 更新任务状态
+        const { error } = await supabase
+            .from('tasks')
+            .update
+            ({
+                status: 'rejected',
+                reject_reason: reason.trim(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+
+        if (error) throw error 
+
+        res.json
+        ({
+            success: true,
+            message: '任务已驳回'
+        })
+    } catch (error: any)
+    {
+        console.error('Reject task error:', error)
+        res.status(500).json
+        ({
+            success: false,
+            message: error.message || '审核失败'
+        })
     }
 }

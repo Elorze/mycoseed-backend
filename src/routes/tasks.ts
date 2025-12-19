@@ -4,15 +4,20 @@ import {
     getTaskById,
     createTask,
     claimTask,
-    submitProof
+    submitProof,
+    approveTask,
+    rejectTask
 } from '../controllers/tasksController'
+import { authenticate } from '../middleware/auth'
 
 const router = Router()
 
 router.get('/', getAllTasks)
 router.get('/:id', getTaskById)
-router.post('/', createTask)
+router.post('/', authenticate, createTask)
 router.patch('/:id/claim', claimTask)
 router.patch('/:id/submit', submitProof)
+router.patch('/:id/approve', authenticate, approveTask)
+router.patch('/:id/reject', authenticate, rejectTask)
 
 export default router

@@ -327,15 +327,15 @@ export const submitProof = async (req: Request,res:Response) =>
                 })
             }
 
-            // 验证最少字数
+            // 验证最少字数（使用字符数，支持中文）
             const minWords = parseInt(proofConfig.description.minWords||'20')
-            const wordCount = proofData.description.trim().split(/\s+/).length
-            if(wordCount<minWords)
+            const charCount = proofData.description.trim().length
+            if(charCount<minWords)
             {
                 return res.status(400).json
                 ({
                     success:false,
-                    message:`文字描述至少需要${minWords}字，当前${wordCount}字`
+                    message:`文字描述至少需要${minWords}字，当前${charCount}字`
                 })
             }
         }

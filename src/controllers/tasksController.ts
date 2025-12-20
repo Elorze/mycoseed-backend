@@ -288,21 +288,7 @@ export const submitProof = async (req: Request,res:Response) =>
                     message:'GPS数据格式错误'
                 })
             }
-
-            // 验证GPS精度
-            const requiredAccuracy = proofConfig.gps.accuracy || 'medium'
-            const accuracyThresholds: Record<string, number> = {
-              high: 10,    // 10米
-              medium: 100, // 100米
-              low: 1000    // 1000米
-            }
-            const threshold = accuracyThresholds[requiredAccuracy] || 100
-            if (accuracy > threshold) {
-                return res.status(400).json({ 
-                  success: false, 
-                  message: `GPS精度不足，要求精度: ${requiredAccuracy} (${threshold}米以内)，当前精度: ${accuracy.toFixed(2)}米` 
-                })
-            }
+            // 不再验证GPS精度，允许使用任何精度的GPS数据
         }
 
         // 验证文件

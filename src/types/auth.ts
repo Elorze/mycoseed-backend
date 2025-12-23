@@ -5,6 +5,9 @@ export interface User
     email?: string
     handle?: string
     image_url?: string
+    name?: string
+    bio?: string
+    avatar?: string
     encrypted_keys?: any
     evm_chain_address?: string
     evm_chain_active_key?: string

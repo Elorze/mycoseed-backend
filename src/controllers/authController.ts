@@ -232,3 +232,51 @@ export const setEncryptedKeysController = async(req:Request,res:Response)=>
     }
 }
 
+// 更新用户资料
+export interface UpdateProfileRequest {
+  name?: string
+  bio?: string
+  avatar?: string
+}
+
+export const updateProfileController = async (req: Request, res: Response) => {
+    try {
+        const user = (req as any).user as User
+
+        if (!user) {
+            return res.status(401).json({ result: 'error', message: 'Unauthorized' })
+        }
+
+        const { name, bio ,avatar }: UpdateProfileRequest = req.body
+
+        // 构建更新对象（只包含提供的字段）
+        const updateData: any = {}
+        if (name !== undefined) updateData.name = name
+        if (bio !== undefined) updateData.bio = bio
+        if (avatar !== undefined) updateData.avatar = avatar
+
+        // 如果没有要更新的字段
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ result: 'error', message: 'No fields to update' })
+        }
+
+        // 更新用户信息
+        const { data: updatedUser, error } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', user.id)
+            .select()
+            .single()
+        
+        if (error) throw error
+
+        res.json({
+            result: 'ok',
+            user: updatedUser
+        })
+    } catch (error: any) {
+        console.error('Update profile error:', error)
+        res.status(500).json({ result: 'error', message: error.message || 'Failed to update profile'})
+    }
+
+}

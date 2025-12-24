@@ -39,6 +39,9 @@ export interface Task{
     creatorId?: string          // 创建者ID (UUID)
     createdAt?: string
     updatedAt?: string
+    participantLimit?: number | null
+    rewardDistributionMode?: 'per_person' | 'total'
+    submissionInstructions?: string
 }
 
 export interface CreateTaskParams{
@@ -52,6 +55,9 @@ export interface CreateTaskParams{
     creatorId?: string
     createdAt?: string
     updatedAt?: string
+    participantLimit?: number | null
+    rewardDistributionMode?: 'per_person' | 'total'
+    submissionInstructions?: string
 }
 
 export interface TaskResponse

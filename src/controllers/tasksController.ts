@@ -26,7 +26,10 @@ const mapDbTaskToTask = (dbTask: any): Task => ({
   allowRepeatClaim: dbTask.allow_repeat_claim || false,  // 新增
   createdAt: dbTask.created_at,
   updatedAt: dbTask.updated_at,
-  creatorId: dbTask.creator_id
+  creatorId: dbTask.creator_id,
+  participantLimit: dbTask.participant_limit ?? null,
+  rewardDistributionMode: dbTask.reward_distribution_mode || 'total',
+  submissionInstructions: dbTask.submission_instructions
 })
 
 /**
@@ -106,8 +109,11 @@ export const createTask = async (req: AuthRequest, res: Response) => {
           proof_config: params.proofConfig || null,
           activity_id: 0,
           is_claimed: false,
-          allow_repeat_claim: params.allowRepeatClaim || false,  // 新增
-          creator_id: req.user?.id || null
+          allow_repeat_claim: params.allowRepeatClaim || false,  
+          creator_id: req.user?.id || null,
+          participant_limit: params.participantLimit ?? null,
+          reward_distribution_mode: params.rewardDistributionMode || 'total',
+          submission_instructions: params.submissionInstructions || null,
         })
         .select()
         .single()
@@ -288,7 +294,6 @@ export const submitProof = async (req: Request,res:Response) =>
                     message:'GPS数据格式错误'
                 })
             }
-            // 不再验证GPS精度，允许使用任何精度的GPS数据
         }
 
         // 验证文件

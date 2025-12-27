@@ -2,7 +2,7 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 
 app = 'mycoseed-backend'
-primary_region = 'sin'  # 新加坡区域，可根据需要修改
+primary_region = 'sin'
 
 [build]
 
@@ -16,7 +16,7 @@ primary_region = 'sin'  # 新加坡区域，可根据需要修改
 [http_service]
   internal_port = 3001
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']

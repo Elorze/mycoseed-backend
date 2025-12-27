@@ -8,9 +8,6 @@ export interface User
     name?: string
     bio?: string
     avatar?: string
-    encrypted_keys?: any
-    evm_chain_address?: string
-    evm_chain_active_key?: string
     phone_verified: boolean
     created_at?: string
     updated_at?: string
@@ -58,7 +55,3 @@ export interface SignInResponse
     address_type?: string
 }
 
-export interface SetEncryptedKeysRequest
-{
-    keys: string
-}

@@ -1,7 +1,7 @@
 import {Request,Response} from 'express'
 import {supabase} from '../services/supabase'
 import {sendSMS} from '../services/sms'
-import {User,SignInRequest,SetEncryptedKeysRequest} from '../types/auth'
+import {User,SignInRequest} from '../types/auth'
 import crypto from 'crypto'
 
 // 生成随机 token
@@ -196,39 +196,6 @@ export const getMeController = async (req: Request, res:Response) =>
     {
         console.error('Get me error:' ,error)
         res.status(500).json({result:'error',message:error.message||'Failed to get user info'}) 
-    }
-}
-
-// 设置加密秘钥
-export const setEncryptedKeysController = async(req:Request,res:Response)=>
-{
-    try
-    {
-        const user = (req as any).user as User  
-        const {keys}:SetEncryptedKeysRequest= req.body
-
-        if(!user)
-        {
-            return res.status(401).json({result:'error',message:'Unauthorized'})
-        }
-
-        if(!keys)
-        {
-            return res.status(400).json({result:'error',message:'Keys are required'})
-        }
-
-        const {error}= await supabase
-            .from('users')
-            .update({encrypted_keys:keys})
-            .eq('id',user.id)
-
-        if(error) throw error
-
-        res.json({result:'ok'})
-    } catch(error:any)
-    {
-        console.error('Set encrypted keys error:',error)
-        res.status(500).json({result:'error', message:error.message || 'Failed to set encrypted keys'})
     }
 }
 

@@ -6,6 +6,20 @@ import { AuthRequest } from '../middleware/auth'
 // ==================== 辅助函数 ====================
 
 /**
+ * 将数据库时间戳转换为本地时间格式 YYYY-MM-DDTHH:mm
+ */
+const formatLocalDateTime = (timestamp: string | null | undefined): string | undefined => {
+  if (!timestamp) return undefined
+  const date = new Date(timestamp)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}`
+}
+
+/**
  * 将数据库格式的任务转换为前端格式
  */
 const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string } => ({
@@ -20,12 +34,12 @@ const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string } => ({
   rejectReason: dbTask.reject_reason,
   discount: dbTask.discount ? parseFloat(dbTask.discount) : undefined,
   discountReason: dbTask.discount_reason,
-  startDate: dbTask.start_date,
-  deadline: dbTask.deadline,
+  startDate: formatLocalDateTime(dbTask.start_date), // 转换为本地时间格式
+  deadline: formatLocalDateTime(dbTask.deadline), // 转换为本地时间格式
   proofConfig: dbTask.proof_config,
   allowRepeatClaim: dbTask.allow_repeat_claim || false,  // 新增
-  createdAt: dbTask.created_at,
-  updatedAt: dbTask.updated_at,
+  createdAt: formatLocalDateTime(dbTask.created_at), // 转换为本地时间格式
+  updatedAt: formatLocalDateTime(dbTask.updated_at), // 转换为本地时间格式
   creatorId: dbTask.creator_id,
   creatorName: dbTask.creator?.name || null, // 从 JOIN 的用户数据中获取昵称
   participantLimit: dbTask.participant_limit ?? null,

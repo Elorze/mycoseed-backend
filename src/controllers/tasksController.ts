@@ -8,7 +8,7 @@ import { AuthRequest } from '../middleware/auth'
 /**
  * 将数据库格式的任务转换为前端格式
  */
-const mapDbTaskToTask = (dbTask: any): Task => ({
+const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string } => ({
   id: dbTask.id, // UUID 保持为字符串
   activityId: dbTask.activity_id || 0,
   title: dbTask.title,
@@ -27,6 +27,7 @@ const mapDbTaskToTask = (dbTask: any): Task => ({
   createdAt: dbTask.created_at,
   updatedAt: dbTask.updated_at,
   creatorId: dbTask.creator_id,
+  creatorName: dbTask.creator?.name || null, // 从 JOIN 的用户数据中获取昵称
   participantLimit: dbTask.participant_limit ?? null,
   rewardDistributionMode: dbTask.reward_distribution_mode || 'total',
   submissionInstructions: dbTask.submission_instructions
@@ -36,16 +37,30 @@ const mapDbTaskToTask = (dbTask: any): Task => ({
  * 从数据库获取任务（带错误处理）
  */
 const getTaskFromDb = async (taskId: string) => {
-    const { data, error } = await supabase
+    // 先获取任务数据
+    const { data: taskData, error: taskError } = await supabase
       .from('tasks')
       .select('*')
       .eq('id', taskId)
       .single()
   
-    if (error) throw error
-    if (!data) throw new Error('任务不存在')
+    if (taskError) throw taskError
+    if (!taskData) throw new Error('任务不存在')
   
-    return data
+    // 如果有创建者ID，获取创建者信息
+    if (taskData.creator_id) {
+      const { data: creatorData, error: creatorError } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('id', taskData.creator_id)
+        .single()
+      
+      if (!creatorError && creatorData) {
+        taskData.creator = creatorData
+      }
+    }
+  
+    return taskData
 }
 
 
@@ -62,14 +77,39 @@ const handleError = (res: Response, error: any, defaultMessage: string) => {
 // 获取所有任务
 export const getAllTasks = async (req: Request, res: Response) => {
     try {
-      const { data, error } = await supabase
+      const { data: tasksData, error } = await supabase
         .from('tasks')
         .select('*')
         .order('created_at', { ascending: false })
   
       if (error) throw error
   
-      const tasks: Task[] = data.map(mapDbTaskToTask)
+      // 获取所有创建者ID
+      const creatorIds = [...new Set(tasksData.filter(t => t.creator_id).map(t => t.creator_id))]
+      
+      // 批量获取创建者信息
+      let creatorsMap: Record<string, { id: string; name: string }> = {}
+      if (creatorIds.length > 0) {
+        const { data: creatorsData } = await supabase
+          .from('users')
+          .select('id, name')
+          .in('id', creatorIds)
+        
+        if (creatorsData) {
+          creatorsMap = creatorsData.reduce((acc, creator) => {
+            acc[creator.id] = creator
+            return acc
+          }, {} as Record<string, { id: string; name: string }>)
+        }
+      }
+      
+      // 为每个任务添加创建者信息
+      const tasksWithCreators = tasksData.map(task => ({
+        ...task,
+        creator: task.creator_id ? creatorsMap[task.creator_id] : null
+      }))
+  
+      const tasks = tasksWithCreators.map(mapDbTaskToTask)
       res.json(tasks)
     } catch (error: any) {
       handleError(res, error, '获取任务列表失败')

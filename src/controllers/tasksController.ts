@@ -556,8 +556,8 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
-        // 验证驳回选项：允许 rejectOption 为空字符串或 undefined，但如果有值必须是有效值
-        if (rejectOption !== undefined && rejectOption !== null && rejectOption !== '' && !['resubmit', 'reclaim'].includes(rejectOption))
+        // 验证驳回选项：明确要求 rejectOption 必须存在且有效
+        if (!rejectOption || !['resubmit', 'reclaim'].includes(String(rejectOption).trim()))
         {
             return res.status(400).json
             ({
@@ -565,6 +565,9 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
                 message: '无效的驳回选项，必须是 "resubmit" 或 "reclaim"'
             })
         }
+        
+        // 确保 rejectOption 是标准化的字符串值
+        const normalizedOption = String(rejectOption).trim()
 
         // 获取任务
         const task = await getTaskFromDb(id)
@@ -603,11 +606,11 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             updated_at: new Date().toISOString()
         }
 
-        if (rejectOption === 'resubmit') {
+        if (normalizedOption === 'resubmit') {
             // 重新提交证明：状态改为 in_progress，清除 submitted_at
             updateData.status = 'in_progress'
             updateData.submitted_at = null
-        } else if (rejectOption === 'reclaim') {
+        } else if (normalizedOption === 'reclaim') {
             // 重新发布任务：状态改为 unclaimed，清除 is_claimed、claimed_at、submitted_at
             updateData.status = 'unclaimed'
             updateData.is_claimed = false
@@ -639,9 +642,9 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
         res.json
         ({
             success: true,
-            message: rejectOption === 'resubmit' 
+            message: normalizedOption === 'resubmit' 
                 ? '任务已驳回，请重新提交证明' 
-                : rejectOption === 'reclaim'
+                : normalizedOption === 'reclaim'
                 ? '任务已驳回，已重新发布'
                 : '任务已驳回'
         })

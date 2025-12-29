@@ -84,9 +84,9 @@ const getTaskFromDb = async (taskId: string) => {
     // 获取接单者信息（从 task_claims 表获取最新的领取记录）
     const { data: claimDataList, error: claimError } = await supabase
       .from('task_claims')
-      .select('user_id')
+      .select('user_id, claimed_at')
       .eq('task_id', taskId)
-      .order('created_at', { ascending: false })
+      .order('claimed_at', { ascending: false })
       .limit(1)
     
     // 如果没有错误且有数据，获取接单者用户信息
@@ -100,6 +100,11 @@ const getTaskFromDb = async (taskId: string) => {
       
       if (!claimerError && claimerData) {
         taskData.claimer = claimerData
+      }
+      
+      // 如果 tasks 表中没有 claimed_at，从 task_claims 表获取
+      if (!taskData.claimed_at && claimData.claimed_at) {
+        taskData.claimed_at = claimData.claimed_at
       }
     }
   

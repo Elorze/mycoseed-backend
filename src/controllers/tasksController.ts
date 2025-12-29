@@ -556,13 +556,13 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
-        // 验证驳回选项
-        if (rejectOption && !['resubmit', 'reclaim'].includes(rejectOption))
+        // 验证驳回选项：允许 rejectOption 为空字符串或 undefined，但如果有值必须是有效值
+        if (rejectOption !== undefined && rejectOption !== null && rejectOption !== '' && !['resubmit', 'reclaim'].includes(rejectOption))
         {
             return res.status(400).json
             ({
                 success: false,
-                message: '无效的驳回选项'
+                message: '无效的驳回选项，必须是 "resubmit" 或 "reclaim"'
             })
         }
 

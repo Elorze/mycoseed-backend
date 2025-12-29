@@ -42,6 +42,10 @@ export interface Task{
     participantLimit?: number | null
     rewardDistributionMode?: 'per_person' | 'total'
     submissionInstructions?: string
+    // 时间戳字段
+    claimedAt?: string          // 领取时间
+    submittedAt?: string        // 提交时间
+    completedAt?: string         // 完成时间
 }
 
 export interface CreateTaskParams{

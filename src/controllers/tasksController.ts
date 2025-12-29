@@ -22,7 +22,7 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
 /**
  * 将数据库格式的任务转换为前端格式
  */
-const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string } => ({
+const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string; claimerId?: string; claimerName?: string } => ({
   id: dbTask.id, // UUID 保持为字符串
   activityId: dbTask.activity_id || 0,
   title: dbTask.title,
@@ -44,7 +44,14 @@ const mapDbTaskToTask = (dbTask: any): Task & { creatorName?: string } => ({
   creatorName: dbTask.creator?.name || null, // 从 JOIN 的用户数据中获取昵称
   participantLimit: dbTask.participant_limit ?? null,
   rewardDistributionMode: dbTask.reward_distribution_mode || 'total',
-  submissionInstructions: dbTask.submission_instructions
+  submissionInstructions: dbTask.submission_instructions,
+  // 时间戳字段
+  claimedAt: formatLocalDateTime(dbTask.claimed_at), // 转换为本地时间格式
+  submittedAt: formatLocalDateTime(dbTask.submitted_at), // 转换为本地时间格式
+  completedAt: formatLocalDateTime(dbTask.completed_at), // 转换为本地时间格式
+  // 接单者信息
+  claimerId: dbTask.claimer?.id || null,
+  claimerName: dbTask.claimer?.name || null
 })
 
 /**
@@ -71,6 +78,28 @@ const getTaskFromDb = async (taskId: string) => {
       
       if (!creatorError && creatorData) {
         taskData.creator = creatorData
+      }
+    }
+  
+    // 获取接单者信息（从 task_claims 表获取最新的领取记录）
+    const { data: claimDataList, error: claimError } = await supabase
+      .from('task_claims')
+      .select('user_id')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    
+    // 如果没有错误且有数据，获取接单者用户信息
+    if (!claimError && claimDataList && claimDataList.length > 0) {
+      const claimData = claimDataList[0]
+      const { data: claimerData, error: claimerError } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('id', claimData.user_id)
+        .single()
+      
+      if (!claimerError && claimerData) {
+        taskData.claimer = claimerData
       }
     }
   
@@ -233,12 +262,14 @@ export const claimTask = async (req:Request,res:Response)=>
         }
 
         // 更新任务状态（如果之前未被领取，设置为已领取）
+        const now = new Date().toISOString()
         if (!task.is_claimed) {
             const {error: updateError} = await supabase
                 .from('tasks')
                 .update({
                     is_claimed: true,
-                    status: 'in_progress'
+                    status: 'in_progress',
+                    claimed_at: now // 记录领取时间
                 })
                 .eq('id', id)
 
@@ -249,7 +280,8 @@ export const claimTask = async (req:Request,res:Response)=>
                 const {error: updateError} = await supabase
                     .from('tasks')
                     .update({
-                        status: 'in_progress'
+                        status: 'in_progress',
+                        claimed_at: now // 更新领取时间（重复领取时）
                     })
                     .eq('id', id)
 
@@ -309,6 +341,12 @@ export const submitProof = async (req: Request,res:Response) =>
             return res.status(400).json({success:false,message:'您还没有领取这个任务'})
         }
 
+        // 验证任务状态：只有进行中的任务才能提交凭证
+        if(task.status !== 'in_progress')
+        {
+            return res.status(400).json({success:false,message:`任务状态不正确，当前状态为：${task.status}，无法提交凭证`})
+        }
+
         // 解析 proof 数据（可能是字符串或者对象）
         let proofData: any
         if(typeof proof === 'string')
@@ -339,8 +377,8 @@ export const submitProof = async (req: Request,res:Response) =>
             }
 
             // 验证GPS数据格式
-            const { latitude,longitude,accuracy}= proofData.gps
-            if(typeof latitude !=='number'||typeof longitude !=='number'||typeof accuracy !=='number')
+            const { latitude,longitude }= proofData.gps
+            if(typeof latitude !=='number'||typeof longitude !=='number')
             {
                 return res.status(400).json
                 ({
@@ -396,7 +434,8 @@ export const submitProof = async (req: Request,res:Response) =>
         .from('tasks')
         .update({
             proof:proofString,
-            status:'under_review'
+            status:'under_review',
+            submitted_at: new Date().toISOString() // 记录提交时间
         })
         .eq('id',id)
 
@@ -455,14 +494,21 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
-        // 更新任务状态
+        // 更新任务状态（如果有审核意见，也保存到reject_reason字段，用于显示给任务完成者）
+        const updateData: any = {
+            status: 'completed',
+            updated_at: new Date().toISOString(),
+            completed_at: new Date().toISOString()
+        }
+        
+        // 如果有审核意见，保存到reject_reason字段（虽然字段名是reject_reason，但可以用于存储审核意见）
+        if (comments && comments.trim().length > 0) {
+            updateData.reject_reason = comments.trim()
+        }
+        
         const { error } = await supabase
             .from('tasks')
-            .update
-            ({
-                status: 'completed',
-                updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id',id)
 
         if (error) throw error
@@ -489,7 +535,7 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
     try
     {
         const { id } = req.params
-        const { reason } = req.body
+        const { reason, rejectOption } = req.body
         const user = req.user
         if (!user) 
         {
@@ -502,6 +548,16 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             ({
                 success: false,
                 message: '请提供驳回理由'
+            })
+        }
+
+        // 验证驳回选项
+        if (rejectOption && !['resubmit', 'reclaim'].includes(rejectOption))
+        {
+            return res.status(400).json
+            ({
+                success: false,
+                message: '无效的驳回选项'
             })
         }
 
@@ -536,15 +592,41 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
-        // 更新任务状态
+        // 根据驳回选项更新任务状态
+        let updateData: any = {
+            reject_reason: reason.trim(),
+            updated_at: new Date().toISOString()
+        }
+
+        if (rejectOption === 'resubmit') {
+            // 重新提交证明：状态改为 in_progress，清除 submitted_at
+            updateData.status = 'in_progress'
+            updateData.submitted_at = null
+        } else if (rejectOption === 'reclaim') {
+            // 重新发布任务：状态改为 unclaimed，清除 is_claimed、claimed_at、submitted_at
+            updateData.status = 'unclaimed'
+            updateData.is_claimed = false
+            updateData.claimed_at = null
+            updateData.submitted_at = null
+            
+            // 清除 task_claims 表中的领取记录
+            const { error: deleteError } = await supabase
+                .from('task_claims')
+                .delete()
+                .eq('task_id', id)
+            
+            if (deleteError) {
+                console.error('Delete task_claims error:', deleteError)
+                // 不抛出错误，继续执行任务状态更新
+            }
+        } else {
+            // 默认：状态改为 rejected
+            updateData.status = 'rejected'
+        }
+
         const { error } = await supabase
             .from('tasks')
-            .update
-            ({
-                status: 'rejected',
-                reject_reason: reason.trim(),
-                updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id', id)
 
         if (error) throw error 
@@ -552,7 +634,11 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
         res.json
         ({
             success: true,
-            message: '任务已驳回'
+            message: rejectOption === 'resubmit' 
+                ? '任务已驳回，请重新提交证明' 
+                : rejectOption === 'reclaim'
+                ? '任务已驳回，已重新发布'
+                : '任务已驳回'
         })
     } catch (error: any)
     {

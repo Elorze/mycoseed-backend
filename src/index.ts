@@ -17,7 +17,8 @@ const corsOptions = {
     const allowedOrigins = [
       process.env.FRONTEND_URL, // Vercel 部署的前端 URL
       'http://localhost:3000',   // 本地开发
-      'http://localhost:5173',   // Vite 默认端口
+      'http://localhost:5173', // VITE默认端口
+      'http://localhost:3003'  
     ].filter(Boolean) // 过滤掉 undefined
     
     // 开发环境允许所有来源，生产环境只允许配置的域名

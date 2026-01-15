@@ -1,8 +1,38 @@
 import {Request,Response} from 'express'
+import {AuthRequest} from '../middleware/auth'
 import {supabase} from '../services/supabase'
 import {sendSMS} from '../services/sms'
 import {User,SignInRequest} from '../types/auth'
 import crypto from 'crypto'
+import { promisify } from 'util'
+
+// 使用 Node.js 内置的 crypto 进行密码哈希（使用 pbkdf2）
+const pbkdf2Async = promisify(crypto.pbkdf2)
+
+/**
+ * 生成密码哈希
+ * @param password 明文密码
+ * @returns 哈希值和盐值（格式：salt:hash）
+ */
+const hashPassword = async (password: string): Promise<string> => {
+    const salt = crypto.randomBytes(16).toString('hex')
+    const hash = await pbkdf2Async(password, salt, 10000, 64, 'sha512')
+    return `${salt}:${hash.toString('hex')}`
+}
+
+/**
+ * 验证密码
+ * @param password 明文密码
+ * @param hashedPassword 存储的哈希值（格式：salt:hash）
+ * @returns 是否匹配
+ */
+const verifyPassword = async (password: string, hashedPassword: string): Promise<boolean> => {
+    const [salt, hash] = hashedPassword.split(':')
+    if (!salt || !hash) return false
+    
+    const hashBuffer = await pbkdf2Async(password, salt, 10000, 64, 'sha512')
+    return hashBuffer.toString('hex') === hash
+}
 
 // 生成随机 token
 const generateToken = ():string=>
@@ -191,11 +221,92 @@ export const getMeController = async (req: Request, res:Response) =>
             return res.status(401).json({result:'error',message:'Unauthorized'})
         }
 
-        res.json(user)
+        // 统一字段名：将 image_url 映射为 avatar（前端使用）
+        // 同时移除敏感字段（password_hash）
+        const userResponse: any = {
+            ...user,
+            avatar: user.avatar || user.image_url,  // 优先使用 avatar，否则使用 image_url
+        }
+        // 删除不需要返回的字段
+        delete userResponse.image_url
+        delete userResponse.password_hash  // 不返回密码哈希
+
+        res.json(userResponse)
     } catch (error: any)
     {
         console.error('Get me error:' ,error)
         res.status(500).json({result:'error',message:error.message||'Failed to get user info'}) 
+    }
+}
+
+// 根据 ID 获取用户信息（用于获取成员详情）
+export const getUserByIdController = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params
+
+        if (!id) {
+            return res.status(400).json({ result: 'error', message: 'User ID is required' })
+        }
+
+        // 从数据库查询用户
+        const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', id)
+            .single()
+
+        if (userError || !user) {
+            return res.status(404).json({ result: 'error', message: 'User not found' })
+        }
+
+        // 统一字段名：将 image_url 映射为 avatar（前端使用）
+        // 同时移除敏感字段（password_hash）
+        const userResponse: any = {
+            ...user,
+            avatar: user.avatar || user.image_url,  // 优先使用 avatar，否则使用 image_url
+        }
+        // 删除不需要返回的字段
+        delete userResponse.image_url
+        delete userResponse.password_hash  // 不返回密码哈希
+
+        res.json({
+            result: 'ok',
+            user: userResponse
+        })
+    } catch (error: any) {
+        console.error('Get user by ID error:', error)
+        res.status(500).json({ result: 'error', message: error.message || 'Failed to get user info' })
+    }
+}
+
+// 获取所有用户列表（用于任务指定参与人员）
+export const getAllUsersController = async (req: AuthRequest, res: Response) => {
+    try {
+        // 从数据库查询所有用户（只返回 id 和 name）
+        const { data: users, error: usersError } = await supabase
+            .from('users')
+            .select('id, name, phone, email')
+            .order('name', { ascending: true, nullsLast: true })
+
+        if (usersError) {
+            return res.status(500).json({ result: 'error', message: usersError.message })
+        }
+
+        // 格式化返回数据
+        const usersList = (users || []).map(user => ({
+            id: user.id,
+            name: user.name || user.phone || user.email || '未命名用户',
+            phone: user.phone,
+            email: user.email
+        }))
+
+        res.json({
+            result: 'ok',
+            users: usersList
+        })
+    } catch (error: any) {
+        console.error('Get all users error:', error)
+        res.status(500).json({ result: 'error', message: error.message || 'Failed to get users list' })
     }
 }
 
@@ -245,5 +356,229 @@ export const updateProfileController = async (req: Request, res: Response) => {
         console.error('Update profile error:', error)
         res.status(500).json({ result: 'error', message: error.message || 'Failed to update profile'})
     }
+}
 
+// 用户注册（使用密码）
+export interface RegisterRequest {
+    phone?: string
+    email?: string
+    password: string
+    name?: string
+}
+
+export const registerController = async (req: Request, res: Response) => {
+    try {
+        const { phone, email, password, name }: RegisterRequest = req.body
+
+        // 验证：必须提供手机号或邮箱，以及密码
+        if (!password || password.length < 6) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '密码长度至少为6位' 
+            })
+        }
+
+        if (!phone && !email) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '必须提供手机号或邮箱' 
+            })
+        }
+
+        // 验证手机号格式
+        if (phone && !/^\d{11}$/.test(phone)) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '手机号格式不正确' 
+            })
+        }
+
+        // 验证邮箱格式
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '邮箱格式不正确' 
+            })
+        }
+
+        // 检查用户是否已存在
+        let existingUser = null
+        if (phone) {
+            const { data } = await supabase
+                .from('users')
+                .select('id')
+                .eq('phone', phone)
+                .single()
+            if (data) existingUser = data
+        }
+        
+        if (!existingUser && email) {
+            const { data } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', email)
+                .single()
+            if (data) existingUser = data
+        }
+
+        if (existingUser) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: phone ? '该手机号已被注册' : '该邮箱已被注册' 
+            })
+        }
+
+        // 生成密码哈希
+        const passwordHash = await hashPassword(password)
+
+        // 创建新用户
+        const userData: any = {
+            password_hash: passwordHash,
+            phone_verified: false,
+        }
+        
+        if (phone) userData.phone = phone
+        if (email) userData.email = email
+        if (name) userData.name = name
+
+        const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert(userData)
+            .select()
+            .single()
+
+        if (createError) {
+            console.error('Create user error:', createError)
+            throw createError
+        }
+
+        // 生成认证 token
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({
+                token,
+                user_id: newUser.id,
+                disabled: false,
+            })
+
+        if (tokenError) throw tokenError
+
+        // 统一字段名：将 image_url 映射为 avatar
+        const userResponse: any = {
+            ...newUser,
+            avatar: newUser.avatar || newUser.image_url,
+        }
+        delete userResponse.image_url
+        delete userResponse.password_hash  // 不返回密码哈希
+
+        res.json({
+            result: 'ok',
+            auth_token: token,
+            user: userResponse,
+            address_type: phone ? 'phone' : 'email',
+        })
+    } catch (error: any) {
+        console.error('Register error:', error)
+        res.status(500).json({ 
+            result: 'error', 
+            message: error.message || '注册失败' 
+        })
+    }
+}
+
+// 密码登录
+export interface PasswordLoginRequest {
+    phone?: string
+    email?: string
+    password: string
+}
+
+export const passwordLoginController = async (req: Request, res: Response) => {
+    try {
+        const { phone, email, password }: PasswordLoginRequest = req.body
+
+        if (!password) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '密码不能为空' 
+            })
+        }
+
+        if (!phone && !email) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '必须提供手机号或邮箱' 
+            })
+        }
+
+        // 查找用户
+        let user = null
+        if (phone) {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('phone', phone)
+                .single()
+            if (error && error.code !== 'PGRST116') throw error
+            user = data
+        } else if (email) {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', email)
+                .single()
+            if (error && error.code !== 'PGRST116') throw error
+            user = data
+        }
+
+        if (!user || !user.password_hash) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '用户不存在或未设置密码' 
+            })
+        }
+
+        // 验证密码
+        const isValid = await verifyPassword(password, user.password_hash)
+        if (!isValid) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '密码错误' 
+            })
+        }
+
+        // 生成认证 token
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({
+                token,
+                user_id: user.id,
+                disabled: false,
+            })
+
+        if (tokenError) throw tokenError
+
+        // 统一字段名：将 image_url 映射为 avatar
+        const userResponse: any = {
+            ...user,
+            avatar: user.avatar || user.image_url,
+        }
+        delete userResponse.image_url
+        delete userResponse.password_hash  // 不返回密码哈希
+
+        res.json({
+            result: 'ok',
+            auth_token: token,
+            user: userResponse,
+            address_type: phone ? 'phone' : 'email',
+        })
+    } catch (error: any) {
+        console.error('Password login error:', error)
+        res.status(500).json({ 
+            result: 'error', 
+            message: error.message || '登录失败' 
+        })
+    }
 }

@@ -4,13 +4,18 @@ export interface User
     phone?: string
     email?: string
     handle?: string
-    image_url?: string
+    image_url?: string      // 数据库字段名（后端使用）
     name?: string
     bio?: string
-    avatar?: string
+    avatar?: string         // 前端使用的字段名（与 image_url 互斥，前端优先使用 avatar）
     phone_verified: boolean
+    password_hash?: string   // 密码哈希值（加密存储，不返回给前端）
     created_at?: string
     updated_at?: string
+    // 钱包相关字段（从外部身份系统同步）
+    evm_chain_address?: string
+    evm_chain_active_key?: string
+    encrypted_keys?: any
 }
 
 export interface AuthToken

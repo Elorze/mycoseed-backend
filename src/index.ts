@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import tasksRouter from './routes/tasks'
 import authRouter from './routes/auth'
 import uploadRouter from './routes/upload'
+import diagnosticsRouter from './routes/diagnostics'
 
 dotenv.config()
 
@@ -51,6 +52,7 @@ app.get('/api/upload/test', (req, res) => {
 app.use('/api/tasks', tasksRouter)
 app.use('/api/auth',authRouter)
 app.use('/api/upload',uploadRouter)
+app.use('/api/diagnostics', diagnosticsRouter)  // 诊断路由（开发用）
 
 // 启动服务器
 app.listen(PORT, () => {

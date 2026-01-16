@@ -41,8 +41,8 @@ export interface TaskInfo {
     title: string
     description: string
     activityId: number
-    startDate: string
-    deadline: string
+    startDate?: string
+    deadline?: string
     submitDeadline?: string
     participantLimit?: number | null
     rewardDistributionMode: 'per_person' | 'custom'  // 奖励分配模式
@@ -101,6 +101,22 @@ export interface Task{
     rewardDistributionMode?: 'per_person' | 'custom'
     proofConfig?: ProofConfig
     submissionInstructions?: string
+    assignedUserId?: string  // 指定参与人员ID（从 taskInfo 中获取）
+    
+    // 参与者列表（用于多人任务）
+    participantsList?: Array<{
+        id: string
+        name?: string
+        creatorId?: string
+        claimerId?: string
+        reward: number
+        currency: string
+        status: TaskStatus
+        participantIndex?: number
+        claimedAt?: string
+        submittedAt?: string
+        proof?: string
+    }>
 }
 
 /**

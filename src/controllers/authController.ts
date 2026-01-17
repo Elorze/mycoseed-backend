@@ -582,3 +582,142 @@ export const passwordLoginController = async (req: Request, res: Response) => {
         })
     }
 }
+
+// 设置密码（验证码验证后）
+export interface SetPasswordRequest {
+    phone: string
+    code: string
+    password: string
+}
+
+export const setPasswordController = async (req: Request, res: Response) => {
+    try {
+        const { phone, code, password }: SetPasswordRequest = req.body
+
+        if (!phone || !code || !password) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '手机号、验证码和密码都是必需的' 
+            })
+        }
+
+        if (!/^\d{11}$/.test(phone)) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '手机号格式不正确' 
+            })
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '密码长度至少为6位' 
+            })
+        }
+
+        // 查找验证码
+        const { data: verificationToken, error: findError } = await supabase
+            .from('verification_tokens')
+            .select('*')
+            .eq('context', 'phone-login')
+            .eq('sent_to', phone)
+            .eq('code', code)
+            .eq('used', false)
+            .single()
+        
+        if (findError || !verificationToken) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '验证码无效' 
+            })
+        }
+
+        // 检查是否过期
+        if (new Date() > new Date(verificationToken.expires_at)) {
+            return res.status(400).json({ 
+                result: 'error', 
+                message: '验证码已过期' 
+            })
+        }
+
+        // 标记验证码为已使用
+        await supabase
+            .from('verification_tokens')
+            .update({ used: true })
+            .eq('id', verificationToken.id)
+
+        // 查找用户
+        let { data: user, error: userError } = await supabase 
+            .from('users')
+            .select('*')
+            .eq('phone', phone)
+            .single()
+        
+        if (userError && userError.code === 'PGRST116') {
+            // 用户不存在，创建新用户
+            const passwordHash = await hashPassword(password)
+            const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                    phone,
+                    phone_verified: true,
+                    password_hash: passwordHash,
+                })
+                .select()
+                .single()
+            
+            if (createError) throw createError
+            user = newUser
+        } else if (userError) {
+            throw userError
+        } else {
+            // 用户存在，更新密码
+            const passwordHash = await hashPassword(password)
+            const { data: updatedUser, error: updateError } = await supabase
+                .from('users')
+                .update({
+                    password_hash: passwordHash,
+                    phone_verified: true,
+                })
+                .eq('id', user.id)
+                .select()
+                .single()
+            
+            if (updateError) throw updateError
+            user = updatedUser
+        }
+
+        // 生成认证 token
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({
+                token,
+                user_id: user.id,
+                disabled: false,
+            })
+
+        if (tokenError) throw tokenError
+
+        // 统一字段名：将 image_url 映射为 avatar
+        const userResponse: any = {
+            ...user,
+            avatar: user.avatar || user.image_url,
+        }
+        delete userResponse.image_url
+        delete userResponse.password_hash  // 不返回密码哈希
+
+        res.json({
+            result: 'ok',
+            auth_token: token,
+            user: userResponse,
+            address_type: 'phone',
+        })
+    } catch (error: any) {
+        console.error('Set password error:', error)
+        res.status(500).json({ 
+            result: 'error', 
+            message: error.message || '设置密码失败' 
+        })
+    }
+}

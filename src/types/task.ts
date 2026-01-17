@@ -49,7 +49,8 @@ export interface TaskInfo {
     proofConfig?: ProofConfig
     submissionInstructions?: string
     creatorId: string  // 任务组创建者ID
-    assignedUserId?: string  // 指定参与人员ID（可选）
+    assignedUserId?: string  // 指定参与人员ID（可选，向后兼容）
+    assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
     createdAt?: string
     updatedAt?: string
 }
@@ -109,7 +110,8 @@ export interface Task{
 export interface CreateTaskParams{
     // 任务基本信息（存储在 task_info 表）
     title: string
-    assignedUserId?: string  // 指定参与人员ID（可选）
+    assignedUserId?: string  // 指定参与人员ID（可选，向后兼容）
+    assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
     description: string
     activityId?: number
     startDate: string

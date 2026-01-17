@@ -9,6 +9,7 @@ import
     registerController,
     passwordLoginController,
     getAllUsersController,
+    setPasswordController,
 } from '../controllers/authController'
 import {authenticate} from '../middleware/auth'
 
@@ -19,6 +20,7 @@ router.post('/send-sms',sendSMSController)
 router.post('/signin',signInController)  // 短信验证码登录
 router.post('/register', registerController)  // 用户注册（密码）
 router.post('/login', passwordLoginController)  // 密码登录
+router.post('/set-password', setPasswordController)  // 设置密码（验证码验证后）
 router.get('/me',authenticate,getMeController)  // 获取当前用户信息
 router.patch('/me', authenticate, updateProfileController)  // 更新用户资料
 router.get('/users', authenticate, getAllUsersController)  // 获取所有用户列表（需要认证）- 必须在 /users/:id 之前

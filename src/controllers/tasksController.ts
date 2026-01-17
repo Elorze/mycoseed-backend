@@ -3,6 +3,39 @@ import { supabase } from '../services/supabase'
 import { Task, CreateTaskParams, TaskStatus, TimelineStatus } from '../types/task'
 import { AuthRequest } from '../middleware/auth'
 
+// ==================== 类型定义 ====================
+
+/**
+ * 扩展的数据库任务类型（包含动态添加的关联数据）
+ * 用于处理从 Supabase 查询返回的任务数据，以及后续动态添加的关联表数据
+ */
+interface TaskDataWithRelations {
+  id: any
+  task_info_id: any
+  creator_id: any
+  claimer_id: any
+  reward: any
+  currency: any
+  weight_coefficient: any
+  participant_index: any
+  status: any
+  completed_at: any
+  created_at: any
+  updated_at: any
+  // 动态添加的属性（从关联表获取）
+  task_info?: any
+  timeline?: any
+  proof?: any
+  reject_reason?: any
+  reject_option?: any
+  discount?: any
+  discount_reason?: any
+  creator?: any
+  claimer?: any
+  task_timeline?: any
+  task_proof?: any
+}
+
 // ==================== 辅助函数 ====================
 
 /**
@@ -329,7 +362,6 @@ const mapDbTaskToTask = (
     proofConfig: info.proof_config,
     submissionInstructions: info.submission_instructions,
     assignedUserId: info.assigned_user_id || null,  // 指定参与人员ID（向后兼容）
-    assignedUserIds: (info.proof_config as any)?._assignedUserIds || (info.assigned_user_id ? [info.assigned_user_id] : []),  // 指定参与人员ID列表
     // 用户信息
     creatorName: dbTask.creator?.name || null,
   claimerName: dbTask.claimer?.name || null
@@ -340,7 +372,7 @@ const mapDbTaskToTask = (
  * 从数据库获取任务（适配新数据库结构）
  * 返回单个任务行及其关联的 task_info, task_timelines, task_proofs
  */
-const getTaskFromDb = async (taskId: string) => {
+const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => {
     // 获取任务行数据（只选择存在的字段，排除已删除的字段）
     const { data: taskData, error: taskError } = await supabase
       .from('tasks')
@@ -351,6 +383,23 @@ const getTaskFromDb = async (taskId: string) => {
     if (taskError) throw taskError
     if (!taskData) throw new Error('任务不存在')
   
+    // 使用类型断言，允许动态添加属性
+    const taskDataWithRelations = taskData as TaskDataWithRelations
+  
+    // 获取关联的 task_info
+    let taskInfo = null
+    if (taskDataWithRelations.task_info_id) {
+      const { data: infoData, error: infoError } = await supabase
+        .from('task_info')
+        .select('*')
+        .eq('id', taskDataWithRelations.task_info_id)
+        .single()
+      
+      if (!infoError && infoData) {
+        taskInfo = infoData
+        taskDataWithRelations.task_info = infoData
+      }
+    }
   
     // 获取 task_timelines
     let taskTimeline = null
@@ -362,7 +411,7 @@ const getTaskFromDb = async (taskId: string) => {
     
     if (!timelineError && timelineData) {
       taskTimeline = timelineData
-      taskData.timeline = timelineData.timeline
+      taskDataWithRelations.timeline = timelineData.timeline
     } else {
       // 如果不存在，创建默认记录
       const { data: newTimeline } = await supabase
@@ -373,7 +422,7 @@ const getTaskFromDb = async (taskId: string) => {
       
       if (newTimeline) {
         taskTimeline = newTimeline
-        taskData.timeline = newTimeline.timeline
+        taskDataWithRelations.timeline = newTimeline.timeline
       }
     }
   
@@ -387,46 +436,137 @@ const getTaskFromDb = async (taskId: string) => {
     
     if (!proofError && proofData) {
       taskProof = proofData
-      taskData.proof = proofData.proof
-      taskData.reject_reason = proofData.reject_reason
-      taskData.reject_option = proofData.reject_option
-      taskData.discount = proofData.discount
-      taskData.discount_reason = proofData.discount_reason
+      taskDataWithRelations.proof = proofData.proof
+      taskDataWithRelations.reject_reason = proofData.reject_reason
+      taskDataWithRelations.reject_option = proofData.reject_option
+      taskDataWithRelations.discount = proofData.discount
+      taskDataWithRelations.discount_reason = proofData.discount_reason
     }
   
     // 获取创建者信息
-    if (taskData.creator_id) {
+    if (taskDataWithRelations.creator_id) {
       const { data: creatorData, error: creatorError } = await supabase
         .from('users')
         .select('id, name')
-        .eq('id', taskData.creator_id)
+        .eq('id', taskDataWithRelations.creator_id)
         .single()
       
       if (!creatorError && creatorData) {
-        taskData.creator = creatorData
+        taskDataWithRelations.creator = creatorData
       }
     }
   
     // 获取领取者信息
-    if (taskData.claimer_id) {
+    if (taskDataWithRelations.claimer_id) {
       const { data: claimerData, error: claimerError } = await supabase
         .from('users')
         .select('id, name')
-        .eq('id', taskData.claimer_id)
+        .eq('id', taskDataWithRelations.claimer_id)
         .single()
       
       if (!claimerError && claimerData) {
-        taskData.claimer = claimerData
+        taskDataWithRelations.claimer = claimerData
       }
     }
   
     // 添加 task_timeline 和 task_proof 到返回对象
-    taskData.task_timeline = taskTimeline
-    taskData.task_proof = taskProof
+    taskDataWithRelations.task_timeline = taskTimeline
+    taskDataWithRelations.task_proof = taskProof
   
-    return taskData
+    return taskDataWithRelations
 }
 
+/**
+ * 获取任务组的所有任务行（用于多人任务）
+ */
+const getTaskGroupFromDb = async (taskInfoId: string) => {
+    // 获取所有关联的任务行（只选择存在的字段，排除已删除的字段）
+    const { data: tasksData, error: tasksError } = await supabase
+      .from('tasks')
+      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+      .eq('task_info_id', taskInfoId)
+      .order('participant_index', { ascending: true })
+  
+    if (tasksError) throw tasksError
+  
+    // 获取 task_info
+    const { data: taskInfo, error: infoError } = await supabase
+      .from('task_info')
+      .select('*')
+      .eq('id', taskInfoId)
+      .single()
+  
+    if (infoError) throw infoError
+  
+    // 批量获取所有任务的 timeline
+    const taskIds = tasksData.map(t => t.id)
+    let timelinesMap: Record<string, any> = {}
+    if (taskIds.length > 0) {
+      const { data: timelinesData } = await supabase
+        .from('task_timelines')
+        .select('task_id, timeline')
+        .in('task_id', taskIds)
+      
+      if (timelinesData) {
+        timelinesMap = timelinesData.reduce((acc, t) => {
+          acc[t.task_id] = t
+          return acc
+        }, {} as Record<string, any>)
+      }
+    }
+  
+    // 批量获取所有任务的 proof
+    let proofsMap: Record<string, any> = {}
+    if (taskIds.length > 0) {
+      const { data: proofsData } = await supabase
+        .from('task_proofs')
+        .select('task_id, proof, reject_reason, reject_option, discount, discount_reason')
+        .in('task_id', taskIds)
+      
+      if (proofsData) {
+        proofsMap = proofsData.reduce((acc, p) => {
+          acc[p.task_id] = p
+          return acc
+        }, {} as Record<string, any>)
+      }
+    }
+  
+    // 获取所有创建者和领取者信息
+    const creatorIds = [...new Set(tasksData.map(t => t.creator_id).filter(Boolean))]
+    const claimerIds = [...new Set(tasksData.map(t => t.claimer_id).filter(Boolean))]
+    const allUserIds = [...new Set([...creatorIds, ...claimerIds])]
+  
+    let usersMap: Record<string, { id: string; name: string }> = {}
+    if (allUserIds.length > 0) {
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', allUserIds)
+      
+      if (usersData) {
+        usersMap = usersData.reduce((acc, u) => {
+          acc[u.id] = u
+          return acc
+        }, {} as Record<string, { id: string; name: string }>)
+      }
+    }
+  
+    // 为每个任务行添加用户信息、timeline 和 proof
+    tasksData.forEach(task => {
+      const taskWithRelations = task as TaskDataWithRelations
+      if (taskWithRelations.creator_id && usersMap[taskWithRelations.creator_id]) {
+        taskWithRelations.creator = usersMap[taskWithRelations.creator_id]
+      }
+      if (taskWithRelations.claimer_id && usersMap[taskWithRelations.claimer_id]) {
+        taskWithRelations.claimer = usersMap[taskWithRelations.claimer_id]
+      }
+      taskWithRelations.task_info = taskInfo
+      taskWithRelations.task_timeline = timelinesMap[taskWithRelations.id] || { timeline: [] }
+      taskWithRelations.task_proof = proofsMap[taskWithRelations.id] || null
+    })
+  
+    return { taskInfo, tasks: tasksData }
+}
 
 
 /**
@@ -557,7 +697,8 @@ export const getAllTasks = async (req: Request, res: Response) => {
       // 为每个任务组创建一个代表任务
       const groupedTasks = Object.values(taskGroups).map(taskGroup => {
         const firstTask = taskGroup[0]
-        const taskInfo = firstTask.task_info
+        const firstTaskWithRelations = firstTask as TaskDataWithRelations
+        const taskInfo = firstTaskWithRelations.task_info
         
         // 如果是多人任务（participant_limit > 1），返回一个代表任务组
         if (taskInfo.participant_limit && taskInfo.participant_limit > 1) {
@@ -575,7 +716,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
             return {
               id: participantTask.id,
               name: participantTask.claimerName || '未领取',
-              claimerId: participantTask.claimerId || null, // 添加 claimerId 用于前端匹配
+              claimerId: participantTask.claimerId || undefined, // 添加 claimerId 用于前端匹配
               claimedAt: participantTask.claimedAt || '',
               submittedAt: participantTask.submittedAt,
               proof: participantTask.proof,
@@ -586,11 +727,12 @@ export const getAllTasks = async (req: Request, res: Response) => {
           })
           
           // 使用第一个任务行的ID作为代表ID（用于路由）
+          const firstTaskWithRelations = firstTask as TaskDataWithRelations
           const representativeTask = mapDbTaskToTask(
             firstTask,
             taskInfo,
-            firstTask.task_timeline,
-            firstTask.task_proof
+            firstTaskWithRelations.task_timeline,
+            firstTaskWithRelations.task_proof
           )
           
           // 添加参与者列表
@@ -754,7 +896,7 @@ export const getTaskById = async (req: Request, res: Response) => {
             return {
               id: t.id,
               name: displayName,
-              claimerId: t.claimer_id || null,
+              claimerId: t.claimer_id || undefined,
               claimedAt: claimedAt || '',
               submittedAt: submittedAt || undefined,
               status: t.status,
@@ -977,10 +1119,11 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         .eq('id', userId)
         .single()
   
+      const firstTaskWithRelations = firstTask as TaskDataWithRelations
       if (creatorData) {
-        firstTask.creator = creatorData
+        firstTaskWithRelations.creator = creatorData
       }
-      firstTask.task_info = taskInfo
+      firstTaskWithRelations.task_info = taskInfo
       
       // 步骤4: 为每个创建的任务创建 task_timelines 记录
       const userName = req.user?.name || '系统'

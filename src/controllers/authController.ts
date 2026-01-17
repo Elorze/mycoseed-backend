@@ -286,7 +286,7 @@ export const getAllUsersController = async (req: AuthRequest, res: Response) => 
         const { data: users, error: usersError } = await supabase
             .from('users')
             .select('id, name, phone, email')
-            .order('name', { ascending: true, nullsLast: true })
+            .order('name', { ascending: true, nullsFirst: false })
 
         if (usersError) {
             return res.status(500).json({ result: 'error', message: usersError.message })

@@ -28,7 +28,7 @@ export const uploadAvatarController = async (req: AuthRequest, res: Response) =>
     }
 
     // 上传文件
-    const result = await uploadAvatar(file.buffer, user.id)
+    const result = await uploadAvatar(file.buffer, user.id, file.mimetype)
 
     res.json({
       success: true,
@@ -83,7 +83,7 @@ export const uploadProofController = async (req: AuthRequest, res: Response) => 
     // 上传所有文件
     const uploadResults = await Promise.all(
       files.map((file, index) => 
-        uploadTaskProof(file.buffer, taskId, user.id, index)
+        uploadTaskProof(file.buffer, taskId, user.id, index, file.mimetype)
       )
     )
 

@@ -245,34 +245,33 @@ const updateTaskStatus = async (
 }
 
 /**
- * 将数据库时间戳转换为 ISO 8601 格式（带时区信息）
- * 注意：数据库存储的是 UTC 时间，这里返回 ISO 格式让前端处理时区转换
- * 方案A：统一使用 UTC 时间，前端使用 toLocaleString 显示本地时间
+ * 将数据库时间戳转换为本地时间字符串格式 YYYY-MM-DDTHH:mm
+ * 统一使用本地时间字符串，不进行时区转换
+ * 如果数据库返回的是 ISO 格式，转换为 YYYY-MM-DDTHH:mm（使用本地时区）
  */
 const formatLocalDateTime = (timestamp: string | null | undefined): string | undefined => {
   if (!timestamp) return undefined
   
-  // 如果已经是 ISO 8601 格式（带时区信息），直接返回
+  // 如果已经是 YYYY-MM-DDTHH:mm 格式，直接返回
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(timestamp)) {
+    return timestamp
+  }
+  
+  // 如果是 ISO 8601 格式（带时区信息），转换为 YYYY-MM-DDTHH:mm（使用本地时区）
   if (timestamp.includes('T') && (timestamp.includes('Z') || timestamp.includes('+') || timestamp.includes('-'))) {
-    // 确保是完整的 ISO 格式
     const date = new Date(timestamp)
     if (!isNaN(date.getTime())) {
-      return date.toISOString()
+      // 使用本地时区获取年月日时分
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const hour = String(date.getHours()).padStart(2, '0')
+      const minute = String(date.getMinutes()).padStart(2, '0')
+      return `${year}-${month}-${day}T${hour}:${minute}`
     }
   }
   
-  // 如果是 YYYY-MM-DDTHH:mm 格式（没有时区信息），解析为本地时间后转换为 ISO
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(timestamp)) {
-    const [datePart, timePart] = timestamp.split('T')
-    const [year, month, day] = datePart.split('-').map(Number)
-    const [hour, minute] = timePart.split(':').map(Number)
-    const localDate = new Date(year, month - 1, day, hour, minute)
-    if (!isNaN(localDate.getTime())) {
-      return localDate.toISOString()
-    }
-  }
-  
-  // 解析时间戳（可能是 ISO 8601 格式或数据库 TIMESTAMP）
+  // 解析时间戳（可能是数据库 TIMESTAMP 格式）
   const date = new Date(timestamp)
   
   // 检查日期是否有效
@@ -281,8 +280,13 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
     return undefined
   }
   
-  // 返回 ISO 8601 格式（UTC 时间）
-  return date.toISOString()
+  // 转换为 YYYY-MM-DDTHH:mm 格式（使用本地时区）
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}`
 }
 
 /**
@@ -1011,17 +1015,25 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       // 需要确保 PostgreSQL 将其解释为本地时区的时间
       const normalizeDateTime = (dateTimeStr: string | undefined): string | null => {
         if (!dateTimeStr) return null
-        // 如果已经是 YYYY-MM-DDTHH:mm 格式，添加时区信息（使用本地时区）
+        // 统一使用本地时间字符串，不进行时区转换
+        // 如果已经是 YYYY-MM-DDTHH:mm 格式，直接返回（不转换为UTC）
         if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) {
-          // 解析为本地时间，然后转换为 ISO 字符串（包含时区信息）
-          const [datePart, timePart] = dateTimeStr.split('T')
-          const [year, month, day] = datePart.split('-').map(Number)
-          const [hour, minute] = timePart.split(':').map(Number)
-          const localDate = new Date(year, month - 1, day, hour, minute)
-          // 返回 ISO 字符串，包含时区信息
-          return localDate.toISOString()
+          return dateTimeStr
         }
-        // 如果已经是完整的 ISO 格式，直接返回
+        // 如果是 ISO 格式（带时区），转换为 YYYY-MM-DDTHH:mm（使用本地时区）
+        if (dateTimeStr.includes('T') && (dateTimeStr.includes('Z') || dateTimeStr.includes('+') || dateTimeStr.includes('-'))) {
+          const date = new Date(dateTimeStr)
+          if (!isNaN(date.getTime())) {
+            // 使用本地时区获取年月日时分
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            const hour = String(date.getHours()).padStart(2, '0')
+            const minute = String(date.getMinutes()).padStart(2, '0')
+            return `${year}-${month}-${day}T${hour}:${minute}`
+          }
+        }
+        // 其他格式直接返回
         return dateTimeStr
       }
       

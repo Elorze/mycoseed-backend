@@ -290,6 +290,32 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
 }
 
 /**
+ * 统一解析时间字符串为本地时间 Date 对象
+ * 去除时区后缀，强制作为本地时间处理
+ * 用于时间比较，避免时区转换问题
+ */
+const parseLocalDateTime = (dateString: string | null | undefined): Date | null => {
+  if (!dateString) return null
+  
+  // 去除时区后缀（Z, +08:00 等），强制作为本地时间处理
+  const cleanDateString = dateString.replace(/Z$|[+-]\d{2}:?\d{2}$/, '')
+  
+  // 匹配 YYYY-MM-DDTHH:mm 格式
+  const match = cleanDateString.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
+  
+  if (match) {
+    const [_, year, month, day, hour, minute] = match.map(Number)
+    // Month 需要 -1（因为 Date 构造函数中月份从 0 开始）
+    return new Date(year, month - 1, day, hour, minute)
+  }
+  
+  // 兜底：尝试直接解析
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return null
+  return date
+}
+
+/**
  * 将数据库格式的任务转换为前端格式（适配新数据库结构）
  * 从 tasks, task_timelines, task_proofs 表获取数据
  */
@@ -980,18 +1006,19 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       }
   
       // 验证时间顺序：报名开始时间 < 报名截止时间 < 提交截止时间
-      const startDate = new Date(params.startDate)
-      const deadline = new Date(params.deadline)
-      const submitDeadline = params.submitDeadline ? new Date(params.submitDeadline) : null
+      // 使用统一的时间解析函数，避免时区问题
+      const startDate = parseLocalDateTime(params.startDate)
+      const deadline = parseLocalDateTime(params.deadline)
+      const submitDeadline = params.submitDeadline ? parseLocalDateTime(params.submitDeadline) : null
       
       // 检查时间是否有效
-      if (isNaN(startDate.getTime())) {
+      if (!startDate) {
         return res.status(400).json({ error: '报名开始时间格式无效' })
       }
-      if (isNaN(deadline.getTime())) {
+      if (!deadline) {
         return res.status(400).json({ error: '报名截止时间格式无效' })
       }
-      if (submitDeadline && isNaN(submitDeadline.getTime())) {
+      if (submitDeadline === null && params.submitDeadline) {
         return res.status(400).json({ error: '提交截止时间格式无效' })
       }
       
@@ -1015,25 +1042,19 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       // 需要确保 PostgreSQL 将其解释为本地时区的时间
       const normalizeDateTime = (dateTimeStr: string | undefined): string | null => {
         if (!dateTimeStr) return null
-        // 统一使用本地时间字符串，不进行时区转换
-        // 如果已经是 YYYY-MM-DDTHH:mm 格式，直接返回（不转换为UTC）
-        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) {
-          return dateTimeStr
+
+        // 1. 物理切除：去除所有已有的时区标识（Z, +08:00, -0500 等）
+        const cleanStr = dateTimeStr.replace(/Z$|[+-]\d{2}:?\d{2}$/, '')
+
+        // 2. 格式验证：匹配 YYYY-MM-DDTHH:mm 格式
+        const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+        
+        if (isoPattern.test(cleanStr)) {
+          // 3. 注入显式偏移量：强制 PostgreSQL 识别为 UTC+8（新加坡时区）
+          return `${cleanStr}+08:00`
         }
-        // 如果是 ISO 格式（带时区），转换为 YYYY-MM-DDTHH:mm（使用本地时区）
-        if (dateTimeStr.includes('T') && (dateTimeStr.includes('Z') || dateTimeStr.includes('+') || dateTimeStr.includes('-'))) {
-          const date = new Date(dateTimeStr)
-          if (!isNaN(date.getTime())) {
-            // 使用本地时区获取年月日时分
-            const year = date.getFullYear()
-            const month = String(date.getMonth() + 1).padStart(2, '0')
-            const day = String(date.getDate()).padStart(2, '0')
-            const hour = String(date.getHours()).padStart(2, '0')
-            const minute = String(date.getMinutes()).padStart(2, '0')
-            return `${year}-${month}-${day}T${hour}:${minute}`
-          }
-        }
-        // 其他格式直接返回
+
+        // 如果完全不匹配，原样返回（由数据库报错或进一步处理）
         return dateTimeStr
       }
       
@@ -1255,35 +1276,31 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
         }
 
         // 检查任务是否已过期（从 task_info 获取）
-        // 统一使用本地时间字符串进行比较，避免时区问题
+        // 使用统一的时间解析函数，避免时区问题
         if (taskInfo?.deadline) {
             const deadlineLocal = formatLocalDateTime(taskInfo.deadline)
             if (deadlineLocal) {
-                // 将本地时间字符串转换为 Date 对象进行比较
-                const [datePart, timePart] = deadlineLocal.split('T')
-                const [year, month, day] = datePart.split('-').map(Number)
-                const [hour, minute] = timePart.split(':').map(Number)
-                const deadlineDate = new Date(year, month - 1, day, hour, minute)
-                const now = new Date()
-                if (deadlineDate < now) {
-                    return res.status(400).json({ success: false, message: '任务已过期，无法领取' })
+                const deadlineDate = parseLocalDateTime(deadlineLocal)
+                if (deadlineDate) {
+                    const now = new Date()
+                    if (deadlineDate < now) {
+                        return res.status(400).json({ success: false, message: '任务已过期，无法领取' })
+                    }
                 }
             }
         }
 
         // 检查任务是否已开始
-        // 统一使用本地时间字符串进行比较，避免时区问题
+        // 使用统一的时间解析函数，避免时区问题
         if (taskInfo?.start_date) {
             const startDateLocal = formatLocalDateTime(taskInfo.start_date)
             if (startDateLocal) {
-                // 将本地时间字符串转换为 Date 对象进行比较
-                const [datePart, timePart] = startDateLocal.split('T')
-                const [year, month, day] = datePart.split('-').map(Number)
-                const [hour, minute] = timePart.split(':').map(Number)
-                const startDate = new Date(year, month - 1, day, hour, minute)
-                const now = new Date()
-                if (startDate > now) {
-                    return res.status(400).json({ success: false, message: '任务尚未开始，无法领取' })
+                const startDate = parseLocalDateTime(startDateLocal)
+                if (startDate) {
+                    const now = new Date()
+                    if (startDate > now) {
+                        return res.status(400).json({ success: false, message: '任务尚未开始，无法领取' })
+                    }
                 }
             }
         }

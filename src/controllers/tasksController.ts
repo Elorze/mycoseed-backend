@@ -280,13 +280,13 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
 
 /**
  * 统一解析时间字符串为本地时间 Date 对象
- * 去除时区后缀，强制作为本地时间处理
+ * 将 YYYY-MM-DDTHH:mm 当作 UTC+8 时间（新加坡时区）处理
  * 用于时间比较，避免时区转换问题
  */
 const parseLocalDateTime = (dateString: string | null | undefined): Date | null => {
   if (!dateString) return null
   
-  // 去除时区后缀（Z, +08:00 等），强制作为本地时间处理
+  // 去除时区后缀（Z, +08:00 等）
   const cleanDateString = dateString.replace(/Z$|[+-]\d{2}:?\d{2}$/, '')
   
   // 匹配 YYYY-MM-DDTHH:mm 格式
@@ -294,8 +294,11 @@ const parseLocalDateTime = (dateString: string | null | undefined): Date | null 
   
   if (match) {
     const [_, year, month, day, hour, minute] = match.map(Number)
-    // Month 需要 -1（因为 Date 构造函数中月份从 0 开始）
-    return new Date(year, month - 1, day, hour, minute)
+    // 将 YYYY-MM-DDTHH:mm 当作 UTC+8 时间（新加坡时区）
+    // 使用 UTC 方法创建 Date 对象，然后减去 8 小时得到正确的 UTC 时间戳
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute))
+    // 减去 8 小时（因为输入是 UTC+8 时间，需要转换为 UTC）
+    return new Date(utcDate.getTime() - 8 * 60 * 60 * 1000)
   }
   
   // 兜底：尝试直接解析

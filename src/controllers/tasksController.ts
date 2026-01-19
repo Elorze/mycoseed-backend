@@ -1255,14 +1255,38 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
         }
 
         // 检查任务是否已过期（从 task_info 获取）
-        if (taskInfo?.deadline && new Date(taskInfo.deadline) < new Date()) {
-            return res.status(400).json({ success: false, message: '任务已过期，无法领取' })
+        // 统一使用本地时间字符串进行比较，避免时区问题
+        if (taskInfo?.deadline) {
+            const deadlineLocal = formatLocalDateTime(taskInfo.deadline)
+            if (deadlineLocal) {
+                // 将本地时间字符串转换为 Date 对象进行比较
+                const [datePart, timePart] = deadlineLocal.split('T')
+                const [year, month, day] = datePart.split('-').map(Number)
+                const [hour, minute] = timePart.split(':').map(Number)
+                const deadlineDate = new Date(year, month - 1, day, hour, minute)
+                const now = new Date()
+                if (deadlineDate < now) {
+                    return res.status(400).json({ success: false, message: '任务已过期，无法领取' })
                 }
+            }
+        }
 
         // 检查任务是否已开始
-        if (taskInfo?.start_date && new Date(taskInfo.start_date) > new Date()) {
-            return res.status(400).json({ success: false, message: '任务尚未开始，无法领取' })
+        // 统一使用本地时间字符串进行比较，避免时区问题
+        if (taskInfo?.start_date) {
+            const startDateLocal = formatLocalDateTime(taskInfo.start_date)
+            if (startDateLocal) {
+                // 将本地时间字符串转换为 Date 对象进行比较
+                const [datePart, timePart] = startDateLocal.split('T')
+                const [year, month, day] = datePart.split('-').map(Number)
+                const [hour, minute] = timePart.split(':').map(Number)
+                const startDate = new Date(year, month - 1, day, hour, minute)
+                const now = new Date()
+                if (startDate > now) {
+                    return res.status(400).json({ success: false, message: '任务尚未开始，无法领取' })
                 }
+            }
+        }
 
         // 检查是否指定了参与人员（允许创建者领取自己的任务）
         if (taskInfo?.assigned_user_id) {

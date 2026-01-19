@@ -245,9 +245,9 @@ const updateTaskStatus = async (
 }
 
 /**
- * 将数据库时间戳转换为本地时间字符串格式 YYYY-MM-DDTHH:mm
- * 统一使用本地时间字符串，不进行时区转换
- * 如果数据库返回的是 ISO 格式，转换为 YYYY-MM-DDTHH:mm（使用 UTC+8 新加坡时区）
+ * 将数据库时间戳转换为北京时间字符串格式 YYYY-MM-DDTHH:mm
+ * 统一使用 UTC 时间作为基准，然后 +8 小时转换为北京时间（UTC+8）
+ * 不受机器时区影响
  */
 const formatLocalDateTime = (timestamp: string | null | undefined): string | undefined => {
   if (!timestamp) return undefined
@@ -257,7 +257,7 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
     return timestamp
   }
 
-  // 2. 解析时间
+  // 2. 解析时间（获取 UTC 时间戳）
   const date = new Date(timestamp)
   if (isNaN(date.getTime())) {
     console.warn(`[formatLocalDateTime] 无效的时间戳: ${timestamp}`)
@@ -266,22 +266,22 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
 
   // 3. 核心技巧：利用 getTime() 直接加 8 小时的毫秒数
   // 这样生成的新的 Date 对象会自动处理所有的跨日、跨月、跨年逻辑
-  const sgTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  const beijingTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
 
   // 4. 格式化输出 (使用 UTC 方法读取，因为我们已经手动偏移了 8 小时)
-  const year = sgTime.getUTCFullYear()
-  const month = String(sgTime.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(sgTime.getUTCDate()).padStart(2, '0')
-  const hour = String(sgTime.getUTCHours()).padStart(2, '0')
-  const minute = String(sgTime.getUTCMinutes()).padStart(2, '0')
+  const year = beijingTime.getUTCFullYear()
+  const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(beijingTime.getUTCDate()).padStart(2, '0')
+  const hour = String(beijingTime.getUTCHours()).padStart(2, '0')
+  const minute = String(beijingTime.getUTCMinutes()).padStart(2, '0')
 
   return `${year}-${month}-${day}T${hour}:${minute}`
 }
 
 /**
- * 统一解析时间字符串为本地时间 Date 对象
- * 将 YYYY-MM-DDTHH:mm 当作 UTC+8 时间（新加坡时区）处理
- * 用于时间比较，避免时区转换问题
+ * 统一解析时间字符串为 Date 对象（用于时间比较）
+ * 将 YYYY-MM-DDTHH:mm 当作北京时间（UTC+8）处理，转换为 UTC 时间戳
+ * 不受机器时区影响，统一使用 UTC 时间作为基准
  */
 const parseLocalDateTime = (dateString: string | null | undefined): Date | null => {
   if (!dateString) return null
@@ -294,14 +294,14 @@ const parseLocalDateTime = (dateString: string | null | undefined): Date | null 
   
   if (match) {
     const [_, year, month, day, hour, minute] = match.map(Number)
-    // 将 YYYY-MM-DDTHH:mm 当作 UTC+8 时间（新加坡时区）
+    // 将 YYYY-MM-DDTHH:mm 当作北京时间（UTC+8）
     // 使用 UTC 方法创建 Date 对象，然后减去 8 小时得到正确的 UTC 时间戳
     const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute))
     // 减去 8 小时（因为输入是 UTC+8 时间，需要转换为 UTC）
     return new Date(utcDate.getTime() - 8 * 60 * 60 * 1000)
   }
   
-  // 兜底：尝试直接解析
+  // 兜底：尝试直接解析（向后兼容）
   const date = new Date(dateString)
   if (isNaN(date.getTime())) return null
   return date

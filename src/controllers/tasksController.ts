@@ -247,45 +247,34 @@ const updateTaskStatus = async (
 /**
  * 将数据库时间戳转换为本地时间字符串格式 YYYY-MM-DDTHH:mm
  * 统一使用本地时间字符串，不进行时区转换
- * 如果数据库返回的是 ISO 格式，转换为 YYYY-MM-DDTHH:mm（使用本地时区）
+ * 如果数据库返回的是 ISO 格式，转换为 YYYY-MM-DDTHH:mm（使用 UTC+8 新加坡时区）
  */
 const formatLocalDateTime = (timestamp: string | null | undefined): string | undefined => {
   if (!timestamp) return undefined
-  
-  // 如果已经是 YYYY-MM-DDTHH:mm 格式，直接返回
+
+  // 1. 如果已经是 YYYY-MM-DDTHH:mm 格式，直接返回
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(timestamp)) {
     return timestamp
   }
-  
-  // 如果是 ISO 8601 格式（带时区信息），转换为 YYYY-MM-DDTHH:mm（使用本地时区）
-  if (timestamp.includes('T') && (timestamp.includes('Z') || timestamp.includes('+') || timestamp.includes('-'))) {
-    const date = new Date(timestamp)
-    if (!isNaN(date.getTime())) {
-      // 使用本地时区获取年月日时分
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const hour = String(date.getHours()).padStart(2, '0')
-      const minute = String(date.getMinutes()).padStart(2, '0')
-      return `${year}-${month}-${day}T${hour}:${minute}`
-    }
-  }
-  
-  // 解析时间戳（可能是数据库 TIMESTAMP 格式）
+
+  // 2. 解析时间
   const date = new Date(timestamp)
-  
-  // 检查日期是否有效
   if (isNaN(date.getTime())) {
     console.warn(`[formatLocalDateTime] 无效的时间戳: ${timestamp}`)
     return undefined
   }
-  
-  // 转换为 YYYY-MM-DDTHH:mm 格式（使用本地时区）
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hour = String(date.getHours()).padStart(2, '0')
-  const minute = String(date.getMinutes()).padStart(2, '0')
+
+  // 3. 核心技巧：利用 getTime() 直接加 8 小时的毫秒数
+  // 这样生成的新的 Date 对象会自动处理所有的跨日、跨月、跨年逻辑
+  const sgTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+
+  // 4. 格式化输出 (使用 UTC 方法读取，因为我们已经手动偏移了 8 小时)
+  const year = sgTime.getUTCFullYear()
+  const month = String(sgTime.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(sgTime.getUTCDate()).padStart(2, '0')
+  const hour = String(sgTime.getUTCHours()).padStart(2, '0')
+  const minute = String(sgTime.getUTCMinutes()).padStart(2, '0')
+
   return `${year}-${month}-${day}T${hour}:${minute}`
 }
 

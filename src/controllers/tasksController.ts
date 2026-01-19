@@ -245,15 +245,31 @@ const updateTaskStatus = async (
 }
 
 /**
- * 将数据库时间戳转换为本地时间格式 YYYY-MM-DDTHH:mm
- * 注意：数据库存储的是 UTC 时间，这里转换为本地时间显示
+ * 将数据库时间戳转换为 ISO 8601 格式（带时区信息）
+ * 注意：数据库存储的是 UTC 时间，这里返回 ISO 格式让前端处理时区转换
+ * 方案A：统一使用 UTC 时间，前端使用 toLocaleString 显示本地时间
  */
 const formatLocalDateTime = (timestamp: string | null | undefined): string | undefined => {
   if (!timestamp) return undefined
   
-  // 如果已经是 YYYY-MM-DDTHH:mm 格式（没有时区信息），直接返回
+  // 如果已经是 ISO 8601 格式（带时区信息），直接返回
+  if (timestamp.includes('T') && (timestamp.includes('Z') || timestamp.includes('+') || timestamp.includes('-'))) {
+    // 确保是完整的 ISO 格式
+    const date = new Date(timestamp)
+    if (!isNaN(date.getTime())) {
+      return date.toISOString()
+    }
+  }
+  
+  // 如果是 YYYY-MM-DDTHH:mm 格式（没有时区信息），解析为本地时间后转换为 ISO
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(timestamp)) {
-    return timestamp
+    const [datePart, timePart] = timestamp.split('T')
+    const [year, month, day] = datePart.split('-').map(Number)
+    const [hour, minute] = timePart.split(':').map(Number)
+    const localDate = new Date(year, month - 1, day, hour, minute)
+    if (!isNaN(localDate.getTime())) {
+      return localDate.toISOString()
+    }
   }
   
   // 解析时间戳（可能是 ISO 8601 格式或数据库 TIMESTAMP）
@@ -265,13 +281,8 @@ const formatLocalDateTime = (timestamp: string | null | undefined): string | und
     return undefined
   }
   
-  // 使用本地时区获取年月日时分（不进行 UTC 转换）
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hour = String(date.getHours()).padStart(2, '0')
-  const minute = String(date.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day}T${hour}:${minute}`
+  // 返回 ISO 8601 格式（UTC 时间）
+  return date.toISOString()
 }
 
 /**

@@ -4,6 +4,45 @@ import { supabase } from '../services/supabase'
 const router = Router()
 
 /**
+ * 路由列表（用于确认线上实际部署的路由是否包含某个 endpoint）
+ * GET /api/diagnostics/routes
+ */
+router.get('/routes', (req: Request, res: Response) => {
+  const app: any = req.app as any
+
+  function collectRoutesFromStack(stack: any[], prefix = ''): Array<{ method: string; path: string }> {
+    const out: Array<{ method: string; path: string }> = []
+    for (const layer of stack || []) {
+      // Direct route
+      if (layer.route?.path && layer.route?.methods) {
+        const methods = Object.keys(layer.route.methods).filter((m) => layer.route.methods[m])
+        for (const m of methods) {
+          out.push({ method: m.toUpperCase(), path: `${prefix}${layer.route.path}` })
+        }
+        continue
+      }
+
+      // Nested router mounted at some path
+      if (layer.name === 'router' && layer.handle?.stack) {
+        // layer.regexp is not easily convertible to a nice path; we keep the prefix and recurse
+        out.push(...collectRoutesFromStack(layer.handle.stack, prefix))
+      }
+    }
+    return out
+  }
+
+  const routes = collectRoutesFromStack(app?._router?.stack || [])
+  routes.sort((a, b) => (a.path + a.method).localeCompare(b.path + b.method))
+
+  res.json({
+    ok: true,
+    count: routes.length,
+    hint: 'Search for /api/auth/sync-from-semi; if missing, backend is not deployed with latest routes.',
+    routes
+  })
+})
+
+/**
  * 数据库连接测试端点
  * GET /api/diagnostics/db-test
  */

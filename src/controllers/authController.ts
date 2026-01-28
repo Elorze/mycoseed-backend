@@ -746,37 +746,71 @@ export const syncFromSemiController = async (req: Request, res: Response) => {
             return res.status(400).json({ result: 'error', message: 'Semi user ID is required'})
         }
 
-        // 使用 phone 作为关联键（如果phone存在）
-        // 如果 phone 不存在，使用 email
+        // 用户查找优先级：semi_id > phone > email
         let user = null
         let userError = null
 
-        if (semiUserData.phone) {
+        // 1. 优先用 semi_id 查找（最可靠）
+        if (semiUserData.id) {
             const result = await supabase
                 .from('users')
                 .select('*')
-                .eq('phone', semiUserData.phone)
-                .single()
+                .eq('semi_id', semiUserData.id)
+                .maybeSingle()  // 使用 maybeSingle 避免空结果报错
             user = result.data
             userError = result.error
-        } else if (semiUserData.email) {
+            // 如果有真正的错误（不是 maybeSingle 的 null），立即抛出
+            if (userError) {
+                throw userError
+            }
+        }
+
+        // 2. 如果没有找到，用 phone 查找
+        if (!user && semiUserData.phone && semiUserData.phone.trim() !== '') {
             const result = await supabase
                 .from('users')
                 .select('*')
-                .eq('email', semiUserData.email)
-                .single()
+                .eq('phone', semiUserData.phone.trim())
+                .maybeSingle()
             user = result.data
             userError = result.error
+            // 如果有真正的错误，立即抛出
+            if (userError) {
+                throw userError
+            }
+        }
+
+        // 3. 如果还没找到，用 email 查找
+        if (!user && semiUserData.email && semiUserData.email.trim() !== '') {
+            const result = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', semiUserData.email.trim())
+                .maybeSingle()
+            user = result.data
+            userError = result.error
+            // 如果有真正的错误，立即抛出
+            if (userError) {
+                throw userError
+            }
         }
 
         // 如果用户不存在，创建新用户
-        if (userError && userError.code === 'PGRST116') {
+        if (!user) {
+            // 如果有真正的错误（不是 maybeSingle 的 null），抛出错误
+            if (userError) {
+                throw userError
+            }
+            
+            // 没有找到用户且没有错误，创建新用户
             const { data: newUser, error: createError } = await supabase
                 .from('users')
                 .insert({
-                    phone: semiUserData.phone || null,
-                    email: semiUserData.email || null,
+                    semi_id: semiUserData.id,  // 保存 Semi ID
+                    phone: semiUserData.phone?.trim() || null,
+                    email: semiUserData.email?.trim() || null,
                     handle: semiUserData.handle || null,
+                    name: semiUserData.handle || null,  // 将 handle 映射到 name
                     image_url: semiUserData.image_url || null,
                     evm_chain_address: semiUserData.evm_chain_address || null,
                     evm_chain_active_key: semiUserData.evm_chain_active_key || null,
@@ -786,34 +820,47 @@ export const syncFromSemiController = async (req: Request, res: Response) => {
                 .select()
                 .single()
 
-                if (createError) throw createError
-                user = newUser
-        } else if (userError) {
-            throw userError
+            if (createError) throw createError
+            user = newUser
         } else if (user) {
             // 用户已存在，更新 semi 的信息（保留业务数据 name, bio, avatar)
             const updateData: any = {}
 
-            if (semiUserData.email) updateData.email = semiUserData.email
-            if (semiUserData.handle) updateData.handle = semiUserData.handle
+            // 始终更新 semi_id（如果之前没有）
+            if (semiUserData.id && !user.semi_id) {
+                updateData.semi_id = semiUserData.id
+            }
+
+            // 更新其他字段
+            if (semiUserData.email?.trim()) updateData.email = semiUserData.email.trim()
+            if (semiUserData.handle) {
+                // 如果用户还没有 name，用 handle 填充
+                if (!user.name) {
+                    updateData.name = semiUserData.handle
+                }
+                updateData.handle = semiUserData.handle
+            }
             if (semiUserData.image_url) updateData.image_url = semiUserData.image_url
             if (semiUserData.evm_chain_address) updateData.evm_chain_address = semiUserData.evm_chain_address
             if (semiUserData.evm_chain_active_key) updateData.evm_chain_active_key = semiUserData.evm_chain_active_key
             if (semiUserData.encrypted_keys) updateData.encrypted_keys = semiUserData.encrypted_keys
-            if (semiUserData.phone) {
-                updateData.phone = semiUserData.phone
+            if (semiUserData.phone?.trim()) {
+                updateData.phone = semiUserData.phone.trim()
                 updateData.phone_verified = true
             }
 
-            const { data: updatedUser, error: updateError} = await supabase
-                .from('users')
-                .update(updateData)
-                .eq('id', user.id)
-                .select()
-                .single()
+            // 只有有更新字段时才执行更新
+            if (Object.keys(updateData).length > 0) {
+                const { data: updatedUser, error: updateError} = await supabase
+                    .from('users')
+                    .update(updateData)
+                    .eq('id', user.id)
+                    .select()
+                    .single()
 
-            if (updateError) throw updateError
-            user = updatedUser
+                if (updateError) throw updateError
+                user = updatedUser
+            }
         }
         
         // 生成 mycoseed 的 auth_token

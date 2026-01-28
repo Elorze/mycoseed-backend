@@ -16,6 +16,8 @@ export interface User
     evm_chain_address?: string
     evm_chain_active_key?: string
     encrypted_keys?: any
+    // Semi 用户关联
+    semi_id?: string  // Semi 用户 ID (TSID)
 }
 
 export interface AuthToken

@@ -721,3 +721,124 @@ export const setPasswordController = async (req: Request, res: Response) => {
         })
     }
 }
+
+// 同步 semi 用户信息到 mycoseed
+export interface SyncFromSemiRequest {
+    id: string
+    phone?: string
+    email?: string
+    handle?: string
+    image_url?: string
+    evm_chain_address?: string
+    evm_chain_active_key?: string
+    encrypted_keys?: any
+    remaining_gas_credits?: number
+    total_used_gas_credits?: number
+    can_send_badge?: boolean
+}
+
+export const syncFromSemiController = async (req: Request, res: Response) => {
+    try {
+        const semiUserData: SyncFromSemiRequest = req.body 
+
+        // 验证必要字段
+        if (!semiUserData.id) {
+            return res.status(400).json({ result: 'error', message: 'Semi user ID is required'})
+        }
+
+        // 使用 phone 作为关联键（如果phone存在）
+        // 如果 phone 不存在，使用 email
+        let user = null
+        let userError = null
+
+        if (semiUserData.phone) {
+            const result = await supabase
+                .from('users')
+                .select('*')
+                .eq('phone', semiUserData.phone)
+                .single()
+            user = result.data
+            userError = result.error
+        } else if (semiUserData.email) {
+            const result = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', semiUserData.email)
+                .single()
+            user = result.data
+            userError = result.error
+        }
+
+        // 如果用户不存在，创建新用户
+        if (userError && userError.code === 'PGRST116') {
+            const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                    phone: semiUserData.phone || null,
+                    email: semiUserData.email || null,
+                    handle: semiUserData.handle || null,
+                    image_url: semiUserData.image_url || null,
+                    evm_chain_address: semiUserData.evm_chain_address || null,
+                    evm_chain_active_key: semiUserData.evm_chain_active_key || null,
+                    encrypted_keys: semiUserData.encrypted_keys || null,
+                    phone_verified: !!semiUserData.phone,
+                })
+                .select()
+                .single()
+
+                if (createError) throw createError
+                user = newUser
+        } else if (userError) {
+            throw userError
+        } else if (user) {
+            // 用户已存在，更新 semi 的信息（保留业务数据 name, bio, avatar)
+            const updateData: any = {}
+
+            if (semiUserData.email) updateData.email = semiUserData.email
+            if (semiUserData.handle) updateData.handle = semiUserData.handle
+            if (semiUserData.image_url) updateData.image_url = semiUserData.image_url
+            if (semiUserData.evm_chain_address) updateData.evm_chain_address = semiUserData.evm_chain_address
+            if (semiUserData.evm_chain_active_key) updateData.evm_chain_active_key = semiUserData.evm_chain_active_key
+            if (semiUserData.encrypted_keys) updateData.encrypted_keys = semiUserData.encrypted_keys
+            if (semiUserData.phone) {
+                updateData.phone = semiUserData.phone
+                updateData.phone_verified = true
+            }
+
+            const { data: updatedUser, error: updateError} = await supabase
+                .from('users')
+                .update(updateData)
+                .eq('id', user.id)
+                .select()
+                .single()
+
+            if (updateError) throw updateError
+            user = updatedUser
+        }
+        
+        // 生成 mycoseed 的 auth_token
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({
+                token,
+                user_id: user.id,
+                disabled: false,
+            })
+
+        if (tokenError) throw tokenError
+
+        // 返回结果
+        res.json({
+            result: 'ok',
+            auth_token: token,
+            user: {
+                ...user,
+                avatar: user.avatar || user.image_url
+            }
+        })
+    } catch (error: any) {
+        console.error('Sync from Semi error:', error)
+        res.status(500).json({ result: 'error', message: error.message || 'Failed to sync user from Semi'})
+    }
+}

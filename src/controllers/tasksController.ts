@@ -1576,9 +1576,11 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
 {
     try
     {
+        console.log('=== [APPROVE TASK] 开始审核 ===')
         const { id } = req.params
         const { comments } = req.body // 可选的评语
         const user = req.user 
+        console.log('[APPROVE TASK] taskId:', id, 'userId:', user?.id, 'comments:', comments)
         if (!user)
         {
             return res.status(401).json({ success: false, message: '未授权' })
@@ -1720,11 +1722,31 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
             )
         }
 
-        res.json
-        ({
-            success: true,
-            message: '任务审核通过！'
-        })
+        // 获取被审核通过的参与者信息和创建者信息
+        const approvedTask = tasksToApprove[0] // 当前审核的任务行
+
+        // 添加调试日志
+        console.log('=== [APPROVE TASK] 准备返回转账数据 ===')
+        console.log('[APPROVE TASK] tasksToApprove.length:', tasksToApprove.length)
+        console.log('[APPROVE TASK] approvedTask:', JSON.stringify(approvedTask, null, 2))
+        console.log('[APPROVE TASK] approvedTask.claimer_id:', approvedTask?.claimer_id)
+        console.log('[APPROVE TASK] approvedTask.reward:', approvedTask?.reward)
+        console.log('[APPROVE TASK] taskInfo:', taskInfo ? { id: taskInfo.id, creator_id: taskInfo.creator_id } : 'null')
+        console.log('[APPROVE TASK] taskInfo.creator_id:', taskInfo?.creator_id)
+
+        const responseData = {
+          success: true,
+          message: '任务审核通过！',
+          data: {
+            claimerId: approvedTask.claimer_id, // 被审核通过的参与者ID
+            reward: parseFloat(approvedTask.reward || '0'), // 该参与者的奖励金额
+            creatorId: taskInfo.creator_id // 创建者ID
+          }
+        }
+
+        console.log('[APPROVE TASK] 准备返回的响应数据:', JSON.stringify(responseData, null, 2))
+        
+        res.json(responseData)
     } catch (error: any)
     {
         console.error('Approve task error:', error)

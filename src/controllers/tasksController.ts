@@ -381,6 +381,7 @@ const mapDbTaskToTask = (
     claimedAt: claimedAt,
     submittedAt: submittedAt,
     completedAt: formatLocalDateTime(dbTask.completed_at),
+    transferredAt: formatLocalDateTime(dbTask.transferred_at),
     createdAt: formatLocalDateTime(dbTask.created_at),
     updatedAt: formatLocalDateTime(dbTask.updated_at),
     // 向后兼容字段（从 taskInfo 中获取）
@@ -409,7 +410,7 @@ const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => 
     // 获取任务行数据（只选择存在的字段，排除已删除的字段）
     const { data: taskData, error: taskError } = await supabase
       .from('tasks')
-      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
       .eq('id', taskId)
       .single()
   
@@ -846,7 +847,7 @@ export const getTaskById = async (req: Request, res: Response) => {
         // 获取该 task_info_id 下的所有任务行
         const { data: allTasks } = await supabase
           .from('tasks')
-          .select('id, claimer_id, status, participant_index, created_at, updated_at')
+          .select('id, claimer_id, status, participant_index, transferred_at, created_at, updated_at')
           .eq('task_info_id', dbTask.task_info_id)
           .order('participant_index', { ascending: true })
         
@@ -933,7 +934,8 @@ export const getTaskById = async (req: Request, res: Response) => {
               claimedAt: claimedAt || '',
               submittedAt: submittedAt || undefined,
               status: t.status,
-              participantIndex: t.participant_index || 1
+              participantIndex: t.participant_index || 1,
+              transferredAt: formatLocalDateTime(t.transferred_at) || undefined
             }
           })
         }
@@ -2079,6 +2081,73 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
         ({
             success: false,
             message: error.message || '审核失败'
+        })
+    }
+}
+
+// 标记转账完成
+export const markTransferCompleted = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params
+        const user = req.user
+        
+        console.log(`\n[MARK TRANSFER] ========== 标记转账完成 ==========`)
+        console.log(`[MARK TRANSFER] 任务ID: ${id}`)
+        console.log(`[MARK TRANSFER] 用户ID: ${user?.id || '未授权'}`)
+        
+        if (!user) {
+            console.log(`[MARK TRANSFER] ❌ 未授权`)
+            return res.status(401).json({ success: false, message: '未授权' })
+        }
+        
+        // 获取任务信息，验证用户是否有权限（必须是创建者）
+        const dbTask = await getTaskFromDb(id)
+        const taskInfo = dbTask.task_info
+        
+        if (!taskInfo) {
+            console.log(`[MARK TRANSFER] ❌ 任务不存在`)
+            return res.status(404).json({ success: false, message: '任务不存在' })
+        }
+        
+        // 验证是否是任务创建者
+        if (taskInfo.creator_id !== user.id) {
+            console.log(`[MARK TRANSFER] ❌ 只有任务创建者可以标记转账`)
+            return res.status(403).json({ success: false, message: '只有任务创建者可以标记转账' })
+        }
+        
+        // 验证任务状态必须是已完成
+        if (dbTask.status !== 'completed') {
+            console.log(`[MARK TRANSFER] ❌ 只有已完成的任务才能标记转账，当前状态: ${dbTask.status}`)
+            return res.status(400).json({ success: false, message: '只有已完成的任务才能标记转账' })
+        }
+        
+        // 更新 transferred_at 字段
+        const now = new Date().toISOString()
+        const { error } = await supabase
+            .from('tasks')
+            .update({ transferred_at: now })
+            .eq('id', id)
+        
+        if (error) {
+            console.error('[MARK TRANSFER] ❌ 更新数据库失败:', error)
+            return res.status(500).json({ success: false, message: '标记转账失败' })
+        }
+        
+        console.log(`[MARK TRANSFER] ✅ 转账已标记为完成`)
+        console.log(`[MARK TRANSFER] ========== 标记完成 ==========\n`)
+        
+        res.json({
+            success: true,
+            message: '转账已标记为完成',
+            data: {
+                transferredAt: formatLocalDateTime(now)
+            }
+        })
+    } catch (error: any) {
+        console.error('[MARK TRANSFER] ❌ 标记转账完成错误:', error)
+        res.status(500).json({
+            success: false,
+            message: error.message || '标记转账失败'
         })
     }
 }

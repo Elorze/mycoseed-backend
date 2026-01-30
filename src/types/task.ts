@@ -88,6 +88,7 @@ export interface Task{
     claimedAt?: string
     submittedAt?: string
     completedAt?: string
+    transferredAt?: string  // 转账完成时间
     createdAt?: string
     updatedAt?: string
     
@@ -117,6 +118,7 @@ export interface Task{
         claimedAt?: string
         submittedAt?: string
         proof?: string
+        transferredAt?: string
     }>
 }
 

@@ -6,7 +6,8 @@ import {
     claimTask,
     submitProof,
     approveTask,
-    rejectTask
+    rejectTask,
+    markTransferCompleted
 } from '../controllers/tasksController'
 import { authenticate } from '../middleware/auth'
 
@@ -19,5 +20,6 @@ router.patch('/:id/claim', authenticate, claimTask)
 router.patch('/:id/submit', authenticate, submitProof)
 router.patch('/:id/approve', authenticate, approveTask)
 router.patch('/:id/reject', authenticate, rejectTask)
+router.patch('/:id/mark-transfer-completed', authenticate, markTransferCompleted)
 
 export default router

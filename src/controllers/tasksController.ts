@@ -2151,3 +2151,69 @@ export const markTransferCompleted = async (req: AuthRequest, res: Response) => 
         })
     }
 }
+
+// 取消转账标记（清除 transferred_at）
+export const unmarkTransferCompleted = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params
+        const user = req.user
+        
+        console.log(`\n[UNMARK TRANSFER] ========== 取消转账标记 ==========`)
+        console.log(`[UNMARK TRANSFER] 任务ID: ${id}`)
+        console.log(`[UNMARK TRANSFER] 用户ID: ${user?.id || '未授权'}`)
+        
+        if (!user) {
+            console.log(`[UNMARK TRANSFER] ❌ 未授权`)
+            return res.status(401).json({ success: false, message: '未授权' })
+        }
+        
+        // 获取任务信息，验证用户是否有权限（必须是创建者）
+        const dbTask = await getTaskFromDb(id)
+        const taskInfo = dbTask.task_info
+        
+        if (!taskInfo) {
+            console.log(`[UNMARK TRANSFER] ❌ 任务不存在`)
+            return res.status(404).json({ success: false, message: '任务不存在' })
+        }
+        
+        // 验证是否是任务创建者
+        if (taskInfo.creator_id !== user.id) {
+            console.log(`[UNMARK TRANSFER] ❌ 只有任务创建者可以取消转账标记`)
+            return res.status(403).json({ success: false, message: '只有任务创建者可以取消转账标记' })
+        }
+        
+        // 验证任务状态必须是已完成
+        if (dbTask.status !== 'completed') {
+            console.log(`[UNMARK TRANSFER] ❌ 只有已完成的任务才能取消转账标记，当前状态: ${dbTask.status}`)
+            return res.status(400).json({ success: false, message: '只有已完成的任务才能取消转账标记' })
+        }
+        
+        // 清除 transferred_at 字段（设为 null）
+        const { error } = await supabase
+            .from('tasks')
+            .update({ transferred_at: null })
+            .eq('id', id)
+        
+        if (error) {
+            console.error('[UNMARK TRANSFER] ❌ 清除转账标记失败:', error)
+            return res.status(500).json({ success: false, message: '取消转账标记失败' })
+        }
+        
+        console.log(`[UNMARK TRANSFER] ✅ 转账标记已清除`)
+        console.log(`[UNMARK TRANSFER] ========== 取消完成 ==========\n`)
+        
+        res.json({
+            success: true,
+            message: '转账标记已取消',
+            data: {
+                transferredAt: null
+            }
+        })
+    } catch (error: any) {
+        console.error('[UNMARK TRANSFER] ❌ 取消转账标记错误:', error)
+        res.status(500).json({
+            success: false,
+            message: error.message || '取消转账标记失败'
+        })
+    }
+}
